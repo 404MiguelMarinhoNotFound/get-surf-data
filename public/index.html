@@ -303,8 +303,22 @@
     70%  { box-shadow: 0 0 0 9px rgba(248, 113, 113, 0); }
     100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0); }
   }
-  .webcam-frame { aspect-ratio: 16 / 9; background: #020617; }
-  .webcam-iframe { display: block; width: 100%; height: 100%; border: none; }
+  .webcam-frame { position: relative; aspect-ratio: 16 / 9; background: #020617; }
+  .webcam-video { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .webcam-fallback {
+    position: absolute; inset: 0; display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 0.75rem; padding: 1rem; text-align: center; color: var(--text-dim);
+    background: rgba(2,6,23,0.9); font-size: 0.84rem;
+  }
+  .webcam-fallback.show { display: flex; }
+  .webcam-open-btn {
+    display: inline-block; padding: 0.55rem 1.1rem;
+    background: rgba(6,182,212,0.15); border: 1px solid rgba(6,182,212,0.4);
+    border-radius: 8px; color: var(--cyan); font-size: 0.84rem;
+    text-decoration: none; cursor: pointer;
+  }
+  .webcam-open-btn:hover { background: rgba(6,182,212,0.25); }
 
   .params {
     display: grid;
@@ -712,8 +726,12 @@ function fmt(value, suffix = '') {
   return (value === null || value === undefined) ? '—' : (value + suffix);
 }
 
+const HLS_JS_URL = 'https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js';
+const hlsInstances = new Map();
+let hlsScriptPromise = null;
+
 function renderWebcam(spot) {
-  if (!spot.webcamPageUrl) return '';
+  if (!spot.webcamStreamUrl) return '';
   return `
     <div class="webcam-panel" data-webcam-spot="${escapeHtml(spot.id)}">
       <div class="webcam-top">
@@ -721,18 +739,92 @@ function renderWebcam(spot) {
         <a class="url-link" href="${escapeHtml(spot.webcamPageUrl)}" target="_blank" rel="noopener">Open Beachcam ${ICON_EXTERNAL}</a>
       </div>
       <div class="webcam-frame">
-        <iframe
-          class="webcam-iframe"
-          src="${escapeHtml(spot.webcamPageUrl)}"
-          allow="autoplay"
-          loading="lazy"
-          title="Live webcam — ${escapeHtml(spot.name)}"
-        ></iframe>
+        <video
+          id="webcam-${escapeHtml(spot.id)}"
+          class="webcam-video"
+          muted
+          playsinline
+          controls
+        ></video>
+        <div class="webcam-fallback" id="webcam-fallback-${escapeHtml(spot.id)}">
+          <span></span>
+          <a class="webcam-open-btn" href="${escapeHtml(spot.webcamPageUrl)}" target="_blank" rel="noopener">📷 Watch live on Beachcam</a>
+        </div>
       </div>
     </div>`;
 }
 
+function showWebcamFallback(spotId, message) {
+  const fallback = document.getElementById('webcam-fallback-' + spotId);
+  if (!fallback) return;
+  if (message) fallback.querySelector('span').textContent = message;
+  fallback.classList.add('show');
+}
+
+function loadHlsScript() {
+  if (window.Hls) return Promise.resolve(window.Hls);
+  if (hlsScriptPromise) return hlsScriptPromise;
+  hlsScriptPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = HLS_JS_URL;
+    script.async = true;
+    script.onload = () => window.Hls ? resolve(window.Hls) : reject(new Error('hls.js did not initialize'));
+    script.onerror = () => reject(new Error('Could not load hls.js'));
+    document.head.appendChild(script);
+  });
+  return hlsScriptPromise;
+}
+
+function destroyWebcam(spotId) {
+  const hls = hlsInstances.get(spotId);
+  if (hls) { hls.destroy(); hlsInstances.delete(spotId); }
+}
+
+function destroyAllWebcams() {
+  for (const spotId of hlsInstances.keys()) destroyWebcam(spotId);
+}
+
+async function initWebcam(spot) {
+  if (!spot.webcamStreamUrl) return;
+  destroyWebcam(spot.id);
+  const video = document.getElementById('webcam-' + spot.id);
+  if (!video) return;
+
+  video.muted = true;
+
+  try {
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Native HLS (Safari, iOS)
+      video.src = spot.webcamStreamUrl;
+    } else {
+      const Hls = await loadHlsScript();
+      if (!document.getElementById('webcam-' + spot.id)) return;
+      if (!Hls.isSupported()) {
+        showWebcamFallback(spot.id, 'Live stream not supported in this browser.');
+        return;
+      }
+      const hls = new Hls({ lowLatencyMode: true });
+      hls.on(Hls.Events.ERROR, (_e, data) => {
+        if (data && data.fatal) showWebcamFallback(spot.id, 'Stream unavailable right now.');
+      });
+      hls.loadSource(spot.webcamStreamUrl);
+      hls.attachMedia(video);
+      hlsInstances.set(spot.id, hls);
+    }
+
+    const playPromise = video.play();
+    if (playPromise) playPromise.catch(() => { /* user will press play */ });
+  } catch (err) {
+    showWebcamFallback(spot.id, 'Could not start live stream.');
+  }
+}
+
+function initConfiguredWebcams() {
+  SPOTS.forEach(initWebcam);
+}
+
 function renderEmpty() {
+  destroyAllWebcams();
   cardsEl.innerHTML = SPOTS.map(s => `
     <div class="card" id="card-${s.id}">
       <div class="card-header">
@@ -748,6 +840,7 @@ function renderEmpty() {
       ${renderWebcam(s)}
     </div>
   `).join('');
+  initConfiguredWebcams();
 }
 
 function setLoading(spotId) {
@@ -758,6 +851,7 @@ function setLoading(spotId) {
 }
 
 function renderError(spot, message) {
+  destroyWebcam(spot.id);
   const card = document.getElementById('card-' + spot.id);
   if (!card) return;
   card.innerHTML = `
@@ -771,6 +865,7 @@ function renderError(spot, message) {
       <a class="url-link" href="${escapeHtml(spot.url)}" target="_blank" rel="noopener">View on surf-forecast.com ${ICON_EXTERNAL}</a>
     </div>
     ${renderWebcam(spot)}`;
+  initWebcam(spot);
 }
 
 function ratingTier(r) {
@@ -1118,6 +1213,7 @@ function renderCard(spot, data) {
     </div>
     ${renderWebcam(spot)}`;
   bindForecastStripInteractions(card, data);
+  initWebcam(spot);
 }
 
 function friendlyError(err) {

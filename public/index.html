@@ -957,6 +957,7 @@ function renderForecastStrip(data) {
   if (slots && slots.length) {
     html += '<div class="today-slots">';
     for (const s of slots) {
+      if (s.height_m == null) continue;
       const cls = s.verdict || 'empty';
       const detail = s.height_m != null
         ? `${s.height_m}m / ${s.period_s}s`
@@ -1089,10 +1090,11 @@ function renderHourPopover(cell, spotData) {
     const h = cell.tide_height_m != null ? `${cell.tide_height_m.toFixed(2)}m` : '';
     rows.push(`<dt>Tide</dt><dd class="${tideClass}">${escapeHtml(cell.tide_state)}${h ? ' · ' + escapeHtml(h) : ''}</dd>`);
   }
-  if (spotData.swell_direction) {
+  const isNow = rel && rel.isNow;
+  if (isNow && spotData.swell_direction) {
     rows.push(`<dt>Swell</dt><dd>from ${escapeHtml(spotData.swell_direction)}${spotData.height_m != null ? ' · ' + escapeHtml(spotData.height_m) + 'm' : ''}${spotData.period_s != null ? ' / ' + escapeHtml(spotData.period_s) + 's' : ''}</dd>`);
   }
-  if (spotData.wind_state) {
+  if (isNow && spotData.wind_state) {
     rows.push(`<dt>Wind</dt><dd>${escapeHtml(spotData.wind_state)}</dd>`);
   }
 
@@ -1105,7 +1107,7 @@ function renderHourPopover(cell, spotData) {
       <div class="rs-pop-chip r-${tier}">${r}/10</div>
     </div>
     ${rows.length ? `<dl class="rs-pop-rows">${rows.join('')}</dl>` : ''}
-    <div class="rs-pop-foot">Rating reflects surf-forecast.com's site rating for the 3-hour block.</div>
+    <div class="rs-pop-foot">Rating is surf-forecast.com's 3-hour block score. Swell &amp; wind shown only for the current block.</div>
   `;
 }
 

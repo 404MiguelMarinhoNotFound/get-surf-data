@@ -135,7 +135,7 @@ def parse_upstream_issued_at(text):
 def parse_today_slots(text):
     """Return today's Morning/Afternoon/Evening forecast blocks with height and period."""
     raw = re.findall(
-        r'(Morning|Afternoon|Evening)\s*\(\d+\s+\w+\)\s*'
+        r'(Morning|Afternoon|Evening)\s*(?:\([^)]*\))?\s*'
         r'(?:(\d+\.?\d*)m\s+\(\d+\.?\d*ft\)\s+(\d+)s|(-)\s*-)',
         text,
         re.IGNORECASE,

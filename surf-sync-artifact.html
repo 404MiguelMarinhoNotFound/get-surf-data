@@ -1,0 +1,1267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lineup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&family=Space+Grotesk:wght@500;700&display=swap">
+<style>
+  :root {
+    /* Ocean palette */
+    --bg-base: #020617;
+    --ocean-deep: #0c4a6e;
+    --ocean-teal: #155e75;
+    --glass: rgba(15, 42, 67, 0.55);
+    --glass-strong: rgba(15, 42, 67, 0.72);
+    --glass-border: rgba(125, 211, 252, 0.14);
+    --glass-border-hover: rgba(125, 211, 252, 0.32);
+    --inset-light: rgba(255, 255, 255, 0.04);
+
+    /* Text */
+    --text: #f0f9ff;
+    --text-dim: #94a3b8;
+    --text-faint: #64748b;
+
+    /* Accents */
+    --accent: #22d3ee;
+    --accent-bright: #67e8f9;
+    --accent-deep: #0ea5e9;
+
+    /* Verdict colors */
+    --green: #10b981;
+    --green-bright: #34d399;
+    --yellow: #fbbf24;
+    --yellow-bright: #fcd34d;
+    --red: #f87171;
+    --red-bright: #fca5a5;
+    --unknown: #64748b;
+
+    /* Glow tokens */
+    --glow-go:    0 0 30px rgba(16, 185, 129, 0.28);
+    --glow-maybe: 0 0 30px rgba(251, 191, 36, 0.26);
+    --glow-skip:  0 0 30px rgba(248, 113, 113, 0.28);
+    --glow-cyan:  0 0 24px rgba(34, 211, 238, 0.35);
+
+    /* Elevation */
+    --shadow-card: 0 1px 0 var(--inset-light) inset, 0 18px 50px -20px rgba(2, 6, 23, 0.7), 0 8px 24px -12px rgba(2, 6, 23, 0.55);
+    --shadow-card-hover: 0 1px 0 rgba(255,255,255,0.06) inset, 0 28px 60px -22px rgba(8, 47, 73, 0.85), 0 0 0 1px var(--glass-border-hover);
+
+    --radius-card: 18px;
+    --radius-inner: 12px;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { background: var(--bg-base); }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: var(--text);
+    min-height: 100vh;
+    padding: 2rem 1rem 3rem;
+    line-height: 1.55;
+    position: relative;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Aurora background — deep ocean radial gradients drifting slowly */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: -10%;
+    z-index: -2;
+    background:
+      radial-gradient(ellipse 60% 50% at 18% 12%, rgba(34, 211, 238, 0.18), transparent 60%),
+      radial-gradient(ellipse 50% 60% at 82% 28%, rgba(14, 165, 233, 0.18), transparent 60%),
+      radial-gradient(ellipse 80% 60% at 50% 100%, rgba(21, 94, 117, 0.45), transparent 70%),
+      linear-gradient(180deg, #020617 0%, #061a2e 55%, #0c2e44 100%);
+    animation: aurora 42s ease-in-out infinite alternate;
+    will-change: transform;
+  }
+  /* Subtle grain layer for non-flat depth */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+      radial-gradient(rgba(148, 163, 184, 0.045) 1px, transparent 1px);
+    background-size: 3px 3px;
+    opacity: 0.5;
+    mix-blend-mode: overlay;
+  }
+
+  @keyframes aurora {
+    0%   { transform: translate3d(0, 0, 0) scale(1); }
+    50%  { transform: translate3d(-2%, 1.5%, 0) scale(1.04); }
+    100% { transform: translate3d(2%, -1%, 0) scale(1.02); }
+  }
+
+  .container { max-width: 1100px; margin: 0 auto; }
+
+  header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;
+  }
+  .brand { display: flex; align-items: center; gap: 0.85rem; }
+  .brand-icon {
+    width: 44px; height: 44px; border-radius: 12px;
+    display: grid; place-items: center;
+    background: linear-gradient(135deg, rgba(34, 211, 238, 0.22), rgba(14, 165, 233, 0.12));
+    border: 1px solid var(--glass-border);
+    color: var(--accent-bright);
+    box-shadow: 0 8px 24px -12px rgba(34, 211, 238, 0.5), inset 0 1px 0 rgba(255,255,255,0.08);
+  }
+  .brand-icon svg { width: 24px; height: 24px; }
+  h1 {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 1.7rem; font-weight: 700; letter-spacing: -0.015em;
+    background: linear-gradient(180deg, #f0f9ff 0%, #bae6fd 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    line-height: 1.1;
+  }
+  .subtitle {
+    color: var(--text-dim); font-size: 0.85rem; margin-top: 0.15rem;
+    font-weight: 400; letter-spacing: 0.005em;
+  }
+
+  .header-controls {
+    display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;
+  }
+
+  .level-select {
+    appearance: none; -webkit-appearance: none;
+    background-color: rgba(2, 6, 23, 0.55);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%2367e8f9' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='5 8 10 13 15 8'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.7rem center;
+    background-size: 14px;
+    color: var(--text);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 0.7rem 2.1rem 0.7rem 0.95rem;
+    font-family: 'Inter', sans-serif;
+    font-weight: 500; font-size: 0.85rem; letter-spacing: 0.01em;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+  }
+  .level-select:hover { border-color: var(--glass-border-hover); background-color: rgba(2, 6, 23, 0.7); }
+  .level-select:focus-visible { border-color: var(--accent); box-shadow: var(--glow-cyan); }
+  .level-select option { background: #061a2e; color: var(--text); }
+
+  .sync-btn {
+    position: relative;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-deep) 100%);
+    color: #021018; border: none;
+    padding: 0.78rem 1.5rem; border-radius: 12px;
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-weight: 600; font-size: 0.95rem; letter-spacing: 0.01em;
+    cursor: pointer; overflow: hidden;
+    box-shadow: 0 10px 28px -10px rgba(34, 211, 238, 0.55), inset 0 1px 0 rgba(255,255,255,0.35);
+    transition: transform 0.18s var(--ease), box-shadow 0.25s var(--ease), filter 0.2s ease;
+  }
+  .sync-btn::before {
+    content: "";
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.18), transparent 55%);
+    pointer-events: none;
+  }
+  .sync-btn:hover { transform: translateY(-1px); box-shadow: 0 14px 32px -10px rgba(34, 211, 238, 0.7), inset 0 1px 0 rgba(255,255,255,0.4); filter: brightness(1.05); }
+  .sync-btn:active { transform: translateY(0) scale(0.98); }
+  .sync-btn:disabled {
+    cursor: wait;
+    background: linear-gradient(135deg, rgba(34, 211, 238, 0.45), rgba(14, 165, 233, 0.4));
+    box-shadow: none;
+    animation: pulse-disabled 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse-disabled {
+    0%,100% { opacity: 0.7; }
+    50%     { opacity: 0.95; }
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: 1.5rem;
+  }
+
+  .card {
+    background: var(--glass);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-card);
+    padding: 1.4rem;
+    box-shadow: var(--shadow-card);
+    transition: transform 0.3s var(--ease), box-shadow 0.3s var(--ease), border-color 0.3s var(--ease);
+    animation: card-in 0.5s var(--ease) both;
+    position: relative;
+  }
+  .card::before {
+    content: "";
+    position: absolute; inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(180deg, rgba(255,255,255,0.04), transparent 30%);
+    pointer-events: none;
+  }
+  .card:hover { transform: translateY(-3px); box-shadow: var(--shadow-card-hover); border-color: var(--glass-border-hover); }
+  @keyframes card-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .card-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 1rem; gap: 1rem;
+  }
+  .spot-name {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 1.3rem; font-weight: 700; letter-spacing: -0.01em;
+    color: var(--text);
+  }
+  .last-sync {
+    font-size: 0.75rem; color: var(--text-dim); white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .verdict {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 0.95rem; font-weight: 600;
+    padding: 0.95rem 1rem;
+    border-radius: var(--radius-inner);
+    margin-bottom: 1.1rem; text-align: center; line-height: 1.5;
+    letter-spacing: 0.005em;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    animation: verdict-in 0.45s var(--ease) both;
+  }
+  @keyframes verdict-in {
+    from { opacity: 0; transform: scale(0.97); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  .verdict.go {
+    background: linear-gradient(135deg, rgba(16,185,129,0.18), rgba(52,211,153,0.10));
+    color: var(--green-bright);
+    border: 1px solid rgba(16,185,129,0.4);
+    box-shadow: var(--glow-go), inset 0 1px 0 rgba(52,211,153,0.18);
+  }
+  .verdict.maybe {
+    background: linear-gradient(135deg, rgba(251,191,36,0.18), rgba(252,211,77,0.10));
+    color: var(--yellow-bright);
+    border: 1px solid rgba(251,191,36,0.4);
+    box-shadow: var(--glow-maybe), inset 0 1px 0 rgba(252,211,77,0.18);
+  }
+  .verdict.skip {
+    background: linear-gradient(135deg, rgba(248,113,113,0.18), rgba(252,165,165,0.10));
+    color: var(--red-bright);
+    border: 1px solid rgba(248,113,113,0.4);
+    box-shadow: var(--glow-skip), inset 0 1px 0 rgba(252,165,165,0.18);
+  }
+  .verdict.empty,
+  .verdict.error {
+    background: linear-gradient(135deg, rgba(100,116,139,0.16), rgba(100,116,139,0.06));
+    color: var(--text-dim);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+
+  .webcam-panel {
+    background: rgba(2, 6, 23, 0.55);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-inner);
+    margin-top: 1.1rem;
+    overflow: hidden;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+  }
+  .webcam-top {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+    padding: 0.65rem 0.85rem; font-size: 0.78rem; color: var(--text-dim);
+    background: linear-gradient(180deg, rgba(15, 42, 67, 0.45), transparent);
+  }
+  .webcam-title {
+    display: flex; align-items: center; gap: 0.5rem;
+    font-weight: 600; color: var(--text); letter-spacing: 0.02em;
+    font-size: 0.78rem; text-transform: uppercase;
+  }
+  .live-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--red); flex-shrink: 0;
+    box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.55);
+    animation: live-pulse 1.6s ease-out infinite;
+  }
+  @keyframes live-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.55); }
+    70%  { box-shadow: 0 0 0 9px rgba(248, 113, 113, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0); }
+  }
+  .webcam-frame { position: relative; aspect-ratio: 16 / 9; background: #020617; }
+  .webcam-video { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .webcam-fallback {
+    position: absolute; inset: 0; display: none;
+    align-items: center; justify-content: center;
+    padding: 1rem; text-align: center; color: var(--text-dim);
+    background: linear-gradient(180deg, rgba(2,6,23,0.85), rgba(6, 26, 46, 0.92));
+    font-size: 0.84rem; pointer-events: none;
+  }
+  .webcam-fallback.show { display: flex; }
+
+  .params {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 0.55rem 1rem;
+    margin-bottom: 1.1rem;
+    padding: 0.95rem 1rem;
+    background: rgba(2, 6, 23, 0.32);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-inner);
+    font-size: 0.9rem;
+  }
+  .param-label {
+    color: var(--text-dim); font-weight: 500;
+    font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em;
+    align-self: center;
+  }
+  .param-value {
+    font-family: 'JetBrains Mono', 'SF Mono', Monaco, Consolas, monospace;
+    font-weight: 600; text-align: right; color: var(--text);
+    font-variant-numeric: tabular-nums;
+    align-self: center;
+  }
+  .param-value.muted { color: var(--text-dim); font-weight: 500; }
+  .param-value.tide-value {
+    max-width: 260px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+  }
+
+  .explanations {
+    background: rgba(2, 6, 23, 0.32);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-inner);
+    padding: 1rem 1.1rem;
+  }
+  .explanations h3 {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--text-dim); margin-bottom: 0.7rem; font-weight: 600;
+  }
+  .explanations ul { list-style: none; }
+  .explanations li {
+    padding: 0.45rem 0; font-size: 0.88rem; line-height: 1.55;
+    display: flex; gap: 0.75rem; align-items: flex-start;
+    color: #cbd5e1;
+  }
+  .explanations li strong { color: var(--text); font-weight: 600; }
+  .explanations li::before {
+    content: ""; width: 9px; height: 9px; border-radius: 50%;
+    flex-shrink: 0; margin-top: 0.5rem;
+  }
+  .explanations li.green::before  { background: var(--green-bright);  box-shadow: 0 0 0 3px rgba(16,185,129,0.18), 0 0 12px rgba(16,185,129,0.55); }
+  .explanations li.yellow::before { background: var(--yellow-bright); box-shadow: 0 0 0 3px rgba(251,191,36,0.18), 0 0 12px rgba(251,191,36,0.55); }
+  .explanations li.red::before    { background: var(--red-bright);    box-shadow: 0 0 0 3px rgba(248,113,113,0.18), 0 0 12px rgba(248,113,113,0.55); }
+  .explanations li.unknown::before { background: var(--unknown);       box-shadow: 0 0 0 3px rgba(100,116,139,0.18); }
+
+  .extras {
+    font-size: 0.78rem; color: var(--text-dim);
+    margin-top: 1rem; padding-top: 1rem;
+    border-top: 1px solid var(--glass-border);
+    display: flex; gap: 1rem; flex-wrap: wrap; justify-content: space-between;
+    align-items: center;
+  }
+  .extras-info { display: inline-flex; align-items: center; gap: 0.45rem; }
+  .extras-info svg { width: 14px; height: 14px; color: var(--accent); flex-shrink: 0; }
+  .url-link {
+    color: var(--accent); text-decoration: none;
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    font-weight: 500;
+    transition: color 0.15s ease;
+  }
+  .url-link:hover { color: var(--accent-bright); }
+  .url-link svg { width: 12px; height: 12px; }
+
+  .empty-state {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 0.8rem; padding: 1.2rem 1rem;
+    color: var(--text-dim); text-align: center;
+  }
+  .empty-state svg { width: 32px; height: 32px; color: var(--accent); opacity: 0.7; }
+
+  .spinner {
+    display: inline-block; width: 13px; height: 13px;
+    border: 2px solid rgba(148, 163, 184, 0.25);
+    border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+    vertical-align: middle; margin-right: 0.5rem;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Forecast strip */
+  .forecast-strip {
+    margin-bottom: 1.1rem;
+    background: rgba(2, 6, 23, 0.32);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-inner);
+    padding: 0.85rem 1rem;
+    font-size: 0.78rem;
+  }
+  .forecast-strip h3 {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--text-dim); margin-bottom: 0.6rem; font-weight: 600;
+  }
+  .today-slots {
+    display: flex; gap: 0.5rem; margin-bottom: 0.7rem; flex-wrap: wrap;
+  }
+  .slot-chip {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 0.35rem 0.6rem; border-radius: 8px; gap: 0.15rem;
+    border: 1px solid transparent; min-width: 62px;
+  }
+  .slot-chip.go     { background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.35); color: var(--green-bright); }
+  .slot-chip.maybe  { background: rgba(251,191,36,0.15); border-color: rgba(251,191,36,0.35); color: var(--yellow-bright); }
+  .slot-chip.skip   { background: rgba(248,113,113,0.12); border-color: rgba(248,113,113,0.3); color: var(--red-bright); }
+  .slot-chip.empty  { background: rgba(100,116,139,0.12); border-color: rgba(148,163,184,0.2); color: var(--text-faint); }
+  .slot-label  { font-weight: 600; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; }
+  .slot-detail { font-size: 0.72rem; opacity: 0.8; font-family: 'JetBrains Mono', monospace; }
+
+  .rating-strip { display: flex; gap: 3px; flex-wrap: wrap; align-items: flex-end; position: relative; }
+  .rating-cell {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.62rem; color: var(--text-faint);
+    background: none; border: 0; padding: 0; cursor: pointer;
+    transition: transform 0.18s var(--ease);
+  }
+  .rating-cell:hover, .rating-cell:focus-visible { transform: translateY(-2px); }
+  .rating-cell:focus-visible { outline: none; }
+  .rating-cell:focus-visible .rating-bar {
+    box-shadow: 0 0 0 2px var(--accent), 0 0 14px rgba(34, 211, 238, 0.55);
+  }
+  .rating-bar {
+    width: 18px; border-radius: 3px;
+    transition: opacity 0.2s ease, box-shadow 0.2s ease, transform 0.2s var(--ease);
+  }
+  .rating-cell:hover .rating-bar { transform: scaleY(1.08); }
+  .rating-bar.r0  { height: 6px;  background: rgba(100,116,139,0.35); }
+  .rating-bar.r1  { height: 9px;  background: rgba(100,116,139,0.55); }
+  .rating-bar.r2  { height: 12px; background: rgba(251,191,36,0.55); }
+  .rating-bar.r3  { height: 16px; background: rgba(251,191,36,0.7); }
+  .rating-bar.r4  { height: 20px; background: rgba(16,185,129,0.6); }
+  .rating-bar.r5  { height: 24px; background: rgba(16,185,129,0.75); }
+  .rating-bar.r6  { height: 28px; background: rgba(16,185,129,0.85); }
+  .rating-bar.r7, .rating-bar.r8, .rating-bar.r9, .rating-bar.r10 {
+    height: 32px; background: rgba(16,185,129,1); box-shadow: 0 0 8px rgba(16,185,129,0.55);
+  }
+  /* Forward-thinking past/now/future cues */
+  .rating-cell.is-past .rating-bar { opacity: 0.32; filter: saturate(0.5); }
+  .rating-cell.is-past span { opacity: 0.5; }
+  .rating-cell.is-now .rating-bar {
+    box-shadow:
+      0 0 0 2px var(--accent-bright),
+      0 0 18px rgba(103, 232, 249, 0.55),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+  }
+  .rating-cell.is-now span {
+    color: var(--accent-bright); font-weight: 600;
+  }
+  .rating-cell.is-now::before {
+    content: "now";
+    font-size: 0.55rem; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--accent-bright); margin-bottom: 2px;
+    font-family: 'Inter', sans-serif; font-weight: 600;
+  }
+  .rating-day-label {
+    font-family: 'Inter', sans-serif; font-size: 0.65rem; color: var(--text-dim);
+    font-weight: 600; margin-top: 0.5rem; margin-bottom: 0.2rem;
+    background: none; border: 0; padding: 2px 4px; cursor: pointer;
+    border-radius: 4px;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .rating-day-label:hover, .rating-day-label:focus-visible {
+    background: rgba(125, 211, 252, 0.08); color: var(--accent-bright); outline: none;
+  }
+  .rating-day-label.is-today { color: var(--accent-bright); }
+  .rating-day-label.is-today::after { content: " •"; color: var(--accent); }
+
+  /* Popover (rich tooltip) */
+  .rs-popover {
+    position: fixed; z-index: 9999;
+    min-width: 200px; max-width: 280px;
+    background: rgba(8, 23, 42, 0.96);
+    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    border: 1px solid var(--glass-border-hover);
+    border-radius: 10px; padding: 0.7rem 0.85rem;
+    color: var(--text); font-size: 0.78rem; line-height: 1.45;
+    box-shadow: 0 18px 50px -10px rgba(0,0,0,0.6), 0 0 0 1px rgba(125, 211, 252, 0.1);
+    pointer-events: none;
+    opacity: 0; transform: translateY(4px) scale(0.98);
+    transition: opacity 0.12s ease, transform 0.12s var(--ease);
+  }
+  .rs-popover.show { opacity: 1; transform: translateY(0) scale(1); }
+  .rs-popover.pinned { pointer-events: auto; box-shadow: 0 18px 50px -10px rgba(0,0,0,0.7), 0 0 0 1px var(--accent); }
+  .rs-pop-header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 0.5rem; margin-bottom: 0.4rem;
+  }
+  .rs-pop-when {
+    font-weight: 600; font-size: 0.82rem; color: var(--text);
+    font-family: 'Space Grotesk', 'Inter', sans-serif; letter-spacing: 0.01em;
+  }
+  .rs-pop-chip {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; font-weight: 600;
+    padding: 2px 7px; border-radius: 999px;
+    background: rgba(100,116,139,0.2); color: var(--text-dim);
+  }
+  .rs-pop-chip.r-go    { background: rgba(16,185,129,0.18); color: var(--green-bright); }
+  .rs-pop-chip.r-maybe { background: rgba(251,191,36,0.18); color: var(--yellow-bright); }
+  .rs-pop-chip.r-skip  { background: rgba(248,113,113,0.18); color: var(--red-bright); }
+  .rs-pop-when-rel {
+    font-size: 0.7rem; color: var(--text-dim); font-weight: 500;
+    margin-left: 0.4rem;
+  }
+  .rs-pop-when-rel.is-now {
+    color: var(--accent-bright); text-transform: uppercase; letter-spacing: 0.08em;
+    font-weight: 600;
+  }
+  .rs-pop-rows {
+    display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.7rem;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;
+  }
+  .rs-pop-rows dt { color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.62rem; align-self: center; }
+  .rs-pop-rows dd { color: var(--text); margin: 0; }
+  .rs-pop-rows .tide-rising { color: var(--green-bright); }
+  .rs-pop-rows .tide-falling { color: var(--yellow-bright); }
+  .rs-pop-foot {
+    margin-top: 0.45rem; padding-top: 0.4rem;
+    border-top: 1px solid rgba(125, 211, 252, 0.1);
+    font-size: 0.7rem; color: var(--text-dim);
+  }
+  /* Day-summary popover */
+  .rs-day-popover .rs-spark {
+    display: block; width: 100%; height: 36px; margin: 0.3rem 0 0.5rem;
+  }
+  .rs-day-popover .rs-spark-bar { transition: opacity 0.2s ease; }
+  .rs-day-popover .rs-spark-bar.is-past { opacity: 0.35; }
+  .rs-day-popover .rs-day-best {
+    color: var(--accent-bright); font-weight: 600;
+    margin-bottom: 0.4rem;
+  }
+  .rs-day-popover .rs-day-best.is-empty { color: var(--text-faint); font-weight: 500; }
+  .rs-now-marker {
+    position: absolute; top: 0; bottom: 16px;
+    width: 2px;
+    background: linear-gradient(180deg, transparent, var(--accent-bright) 30%, var(--accent) 70%, transparent);
+    box-shadow: 0 0 8px var(--accent-bright);
+    pointer-events: none; z-index: 1;
+  }
+  .best-window {
+    margin-top: 0.6rem; font-size: 0.76rem; color: var(--accent);
+    font-weight: 500; display: flex; align-items: center; gap: 0.35rem;
+  }
+
+  .footnote {
+    color: var(--text-faint); font-size: 0.75rem;
+    margin-top: 2rem; text-align: center;
+    letter-spacing: 0.01em;
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  @media (max-width: 600px) {
+    .cards { grid-template-columns: 1fr; gap: 1.1rem; }
+    header { flex-direction: column; align-items: stretch; gap: 0.75rem; }
+    .header-controls { justify-content: space-between; width: 100%; }
+    .level-select { flex: 1; }
+    .sync-btn { flex-shrink: 0; }
+  }
+
+  @media (max-width: 480px) {
+    body { padding: 1.25rem 0.75rem 2rem; }
+    h1 { font-size: 1.4rem; }
+    .card { padding: 1.15rem; }
+    .brand-icon { width: 38px; height: 38px; }
+    .brand-icon svg { width: 20px; height: 20px; }
+    .card-header { flex-wrap: wrap; }
+    .params { font-size: 0.83rem; }
+    .explanations li { font-size: 0.83rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    body::before { animation: none; }
+    .card, .verdict, .sync-btn { animation: none !important; transition: none !important; }
+    .card:hover { transform: none; }
+    .live-dot { animation: none; box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.16); }
+    .spinner { animation-duration: 1.4s; }
+    .sync-btn:disabled { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="brand">
+      <div class="brand-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 6c.5-.5 1.5-1 3-1s2.5 1 4 1 2.5-1 4-1 2.5 1 4 1 2.5-.5 3-1"/>
+          <path d="M2 12c.5-.5 1.5-1 3-1s2.5 1 4 1 2.5-1 4-1 2.5 1 4 1 2.5-.5 3-1"/>
+          <path d="M2 18c.5-.5 1.5-1 3-1s2.5 1 4 1 2.5-1 4-1 2.5 1 4 1 2.5-.5 3-1"/>
+        </svg>
+      </div>
+      <div>
+        <h1>Lineup</h1>
+        <div class="subtitle">Read the lineup. Skill-aware verdict for your local breaks.</div>
+      </div>
+    </div>
+    <div class="header-controls">
+      <select class="level-select" id="levelSelect" aria-label="Skill level">
+        <option value="beginner">Beginner — softboard</option>
+        <option value="improver" selected>Improver — mid-length</option>
+        <option value="intermediate">Intermediate</option>
+        <option value="advanced">Advanced</option>
+      </select>
+      <button class="sync-btn" id="syncBtn">Sync All</button>
+    </div>
+  </header>
+  <div class="cards" id="cards"></div>
+  <div class="footnote">
+    Each sync asks the local server to fetch surf-forecast.com and grade the latest conditions.
+  </div>
+</div>
+
+<script>
+// =============================================================================
+// CONFIG
+// =============================================================================
+
+const SPOTS = [
+  { id: 'carcavelos', name: 'Carcavelos',
+    url: 'https://www.surf-forecast.com/breaks/Carcavelos/forecasts/latest',
+    webcamPageUrl: 'https://beachcam.meo.pt/livecams/praia-de-carcavelos/',
+    webcamStreamUrl: 'https://video-auth1.iol.pt/beachcam/carcavelos/playlist.m3u8' },
+  { id: 'caparica',   name: 'Costa da Caparica',
+    url: 'https://www.surf-forecast.com/breaks/Costada-Caparica/forecasts/latest',
+    webcamPageUrl: 'https://beachcam.meo.pt/livecams/costa-da-caparica/',
+    webcamStreamUrl: 'https://video-auth1.iol.pt/beachcam/costacaparicacds/playlist.m3u8' },
+];
+
+// =============================================================================
+// SKILL LEVEL — persisted in localStorage; passed to the server which is the
+// single source of truth for grading.
+// =============================================================================
+
+const VALID_LEVELS = ['beginner', 'improver', 'intermediate', 'advanced'];
+const DEFAULT_LEVEL = 'improver';
+const LEVEL_STORAGE_KEY = 'surfsync_level';
+
+function readStoredLevel() {
+  const stored = localStorage.getItem(LEVEL_STORAGE_KEY);
+  return VALID_LEVELS.includes(stored) ? stored : DEFAULT_LEVEL;
+}
+
+let currentLevel = readStoredLevel();
+
+// =============================================================================
+// API CLIENT — use the local Python server so the browser never has to call
+// external APIs directly.
+// =============================================================================
+
+const SAME_ORIGIN_API =
+  ['127.0.0.1', 'localhost'].includes(window.location.hostname) &&
+  window.location.port === '8765';
+const API_ORIGIN = SAME_ORIGIN_API ? '' : 'http://127.0.0.1:8765';
+
+function apiUrl(path) {
+  return API_ORIGIN + path;
+}
+
+async function scrape(spot) {
+  const qs = `?spot=${encodeURIComponent(spot.id)}&level=${encodeURIComponent(currentLevel)}`;
+  const response = await fetch(apiUrl('/api/sync' + qs));
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Local API ${response.status}${body ? ': ' + body.slice(0, 120) : ''}`);
+  }
+
+  const data = await response.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+// =============================================================================
+// UI
+// =============================================================================
+
+const cardsEl = document.getElementById('cards');
+const syncBtn = document.getElementById('syncBtn');
+const HLS_JS_URL = 'https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js';
+const hlsInstances = new Map();
+let hlsScriptPromise = null;
+
+// Inline SVG icons (Lucide-style, 24x24 viewBox, currentColor stroke)
+const ICON_DROPLET = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5s5.5 6 5.5 11a5.5 5.5 0 1 1-11 0c0-5 5.5-11 5.5-11Z"/></svg>`;
+const ICON_EXTERNAL = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>`;
+const ICON_COMPASS = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>`;
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function fmt(value, suffix = '') {
+  return (value === null || value === undefined) ? '—' : (value + suffix);
+}
+
+function renderWebcam(spot) {
+  if (!spot.webcamStreamUrl) return '';
+  return `
+    <div class="webcam-panel" data-webcam-spot="${escapeHtml(spot.id)}">
+      <div class="webcam-top">
+        <div class="webcam-title"><span class="live-dot" aria-hidden="true"></span>Live webcam</div>
+        <a class="url-link" href="${escapeHtml(spot.webcamPageUrl)}" target="_blank" rel="noopener">Open Beachcam ${ICON_EXTERNAL}</a>
+      </div>
+      <div class="webcam-frame">
+        <video
+          id="webcam-${escapeHtml(spot.id)}"
+          class="webcam-video"
+          autoplay
+          muted
+          playsinline
+          controls
+          crossorigin="anonymous"
+        ></video>
+        <div class="webcam-fallback" id="webcam-fallback-${escapeHtml(spot.id)}">
+          Live video could not start here. Use Open Beachcam.
+        </div>
+      </div>
+    </div>`;
+}
+
+function showWebcamFallback(spotId, message) {
+  const fallback = document.getElementById('webcam-fallback-' + spotId);
+  if (!fallback) return;
+  fallback.textContent = message || 'Live video could not start here. Use Open Beachcam.';
+  fallback.classList.add('show');
+}
+
+function loadHlsScript() {
+  if (window.Hls) return Promise.resolve(window.Hls);
+  if (hlsScriptPromise) return hlsScriptPromise;
+
+  hlsScriptPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = HLS_JS_URL;
+    script.async = true;
+    script.onload = () => window.Hls ? resolve(window.Hls) : reject(new Error('hls.js did not initialize'));
+    script.onerror = () => reject(new Error('Could not load hls.js'));
+    document.head.appendChild(script);
+  });
+  return hlsScriptPromise;
+}
+
+function destroyWebcam(spotId) {
+  const hls = hlsInstances.get(spotId);
+  if (hls) {
+    hls.destroy();
+    hlsInstances.delete(spotId);
+  }
+}
+
+function destroyAllWebcams() {
+  for (const spotId of hlsInstances.keys()) destroyWebcam(spotId);
+}
+
+async function initWebcam(spot) {
+  if (!spot.webcamStreamUrl) return;
+
+  destroyWebcam(spot.id);
+  const video = document.getElementById('webcam-' + spot.id);
+  if (!video) return;
+  const videoId = video.id;
+
+  video.muted = true;
+  video.autoplay = true;
+  video.playsInline = true;
+
+  try {
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = spot.webcamStreamUrl;
+    } else {
+      const Hls = await loadHlsScript();
+      if (document.getElementById(videoId) !== video) return;
+      if (!Hls.isSupported()) {
+        showWebcamFallback(spot.id, 'This browser cannot play the live stream here. Use Open Beachcam.');
+        return;
+      }
+      const hls = new Hls({ lowLatencyMode: true });
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data && data.fatal) showWebcamFallback(spot.id, 'Beachcam stream is not available here right now.');
+      });
+      hls.loadSource(spot.webcamStreamUrl);
+      hls.attachMedia(video);
+      hlsInstances.set(spot.id, hls);
+    }
+
+    if (document.getElementById(videoId) !== video) return;
+    const playPromise = video.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(() => {
+        showWebcamFallback(spot.id, 'Autoplay was blocked. Press play on the video controls.');
+      });
+    }
+  } catch (err) {
+    showWebcamFallback(spot.id, 'Live video could not start here. Use Open Beachcam.');
+  }
+}
+
+function initConfiguredWebcams() {
+  SPOTS.forEach(initWebcam);
+}
+
+function renderEmpty() {
+  destroyAllWebcams();
+  cardsEl.innerHTML = SPOTS.map(s => `
+    <div class="card" id="card-${s.id}">
+      <div class="card-header">
+        <div class="spot-name">${escapeHtml(s.name)}</div>
+        <div class="last-sync">not synced</div>
+      </div>
+      <div class="verdict empty">
+        <div class="empty-state">
+          ${ICON_COMPASS}
+          <span>Press <strong>Sync All</strong> to load conditions</span>
+        </div>
+      </div>
+      ${renderWebcam(s)}
+    </div>
+  `).join('');
+  initConfiguredWebcams();
+}
+
+function setLoading(spotId) {
+  const card = document.getElementById('card-' + spotId);
+  if (!card) return;
+  const v = card.querySelector('.verdict');
+  if (v) { v.className = 'verdict empty'; v.innerHTML = '<span class="spinner"></span> fetching forecast (10–20s)...'; }
+}
+
+function renderError(spot, message) {
+  destroyWebcam(spot.id);
+  const card = document.getElementById('card-' + spot.id);
+  if (!card) return;
+  card.innerHTML = `
+    <div class="card-header">
+      <div class="spot-name">${escapeHtml(spot.name)}</div>
+      <div class="last-sync">error</div>
+    </div>
+    <div class="verdict error">⚠️ ${escapeHtml(message)}</div>
+    <div class="extras">
+      <span></span>
+      <a class="url-link" href="${escapeHtml(spot.url)}" target="_blank" rel="noopener">View on surf-forecast.com ${ICON_EXTERNAL}</a>
+    </div>
+    ${renderWebcam(spot)}`;
+  initWebcam(spot);
+}
+
+function ratingTier(r) {
+  if (r >= 4) return 'go';
+  if (r >= 2) return 'maybe';
+  return 'skip';
+}
+
+function relativeWhen(cellMs, nowMs) {
+  if (cellMs == null || nowMs == null) return null;
+  const diffH = (cellMs - nowMs) / 3_600_000;
+  if (diffH > -1.5 && diffH < 1.5) return { text: 'happening now', isNow: true };
+  if (diffH < 0) {
+    const h = Math.round(-diffH);
+    return { text: h <= 1 ? '1 h ago' : `${h} h ago`, isPast: true };
+  }
+  const h = Math.round(diffH);
+  if (h < 24) return { text: `in ${h} h` };
+  const d = Math.round(h / 24);
+  return { text: d === 1 ? 'tomorrow' : `in ${d} days` };
+}
+
+function temporalClass(cellMs, nowMs) {
+  if (cellMs == null || nowMs == null) return 'is-future';
+  const diffH = (cellMs - nowMs) / 3_600_000;
+  if (diffH < -1.5) return 'is-past';
+  if (diffH < 1.5) return 'is-now';
+  return 'is-future';
+}
+
+function renderForecastStrip(data) {
+  const slots = data.today_slots;
+  const timeline = data.rating_timeline;
+  const bestWindow = data.best_window;
+  const nowMs = data.now_utc ? new Date(data.now_utc).getTime() : Date.now();
+  if (!slots && !timeline) return '';
+
+  let html = '<div class="forecast-strip"><h3>Forecast</h3>';
+
+  // Today M/A/E chips
+  if (slots && slots.length) {
+    html += '<div class="today-slots">';
+    for (const s of slots) {
+      const cls = s.verdict || 'empty';
+      const detail = s.height_m != null
+        ? `${s.height_m}m / ${s.period_s}s`
+        : '—';
+      html += `<div class="slot-chip ${escapeHtml(cls)}">
+        <span class="slot-label">${escapeHtml(s.label)}</span>
+        <span class="slot-detail">${escapeHtml(detail)}</span>
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  // 3-hourly rating bars
+  if (timeline && timeline.length) {
+    const byDay = [];
+    let lastDay = null;
+    for (const cell of timeline) {
+      if (cell.day !== lastDay) { byDay.push({ day: cell.day, cells: [] }); lastDay = cell.day; }
+      byDay[byDay.length - 1].cells.push(cell);
+    }
+    // Identify "today" group as the first one whose first cell is not in the past.
+    const todayDay = (() => {
+      for (const g of byDay) {
+        for (const c of g.cells) {
+          if (c.timestamp_utc && new Date(c.timestamp_utc).getTime() >= nowMs - 24 * 3_600_000) return g.day;
+        }
+      }
+      return byDay[0] ? byDay[0].day : null;
+    })();
+
+    html += '<div class="rating-strips-wrap" style="overflow-x:auto"><div style="display:flex;gap:0.75rem;align-items:flex-end;min-width:max-content">';
+    for (const group of byDay) {
+      const dayKey = encodeURIComponent(group.day);
+      const isToday = group.day === todayDay ? ' is-today' : '';
+      html += '<div>';
+      html += `<button type="button" class="rating-day-label${isToday}" data-day-key="${escapeHtml(dayKey)}" aria-label="Day summary for ${escapeHtml(group.day)}">${escapeHtml(group.day)}</button>`;
+      html += '<div class="rating-strip">';
+      for (let i = 0; i < group.cells.length; i++) {
+        const cell = group.cells[i];
+        const r = Math.min(10, Math.max(0, cell.rating));
+        const cellMs = cell.timestamp_utc ? new Date(cell.timestamp_utc).getTime() : null;
+        const tcls = temporalClass(cellMs, nowMs);
+        const cellId = `${dayKey}_${i}`;
+        html += `<button type="button" class="rating-cell ${tcls}" data-cell-id="${escapeHtml(cellId)}" aria-label="${escapeHtml(cell.day)} ${escapeHtml(cell.time)}, rating ${r} of 10">
+          <div class="rating-bar r${r}"></div>
+          <span>${escapeHtml(cell.time.replace(/([AP]M)/, ''))}</span>
+        </button>`;
+      }
+      html += '</div></div>';
+    }
+    html += '</div></div>';
+  }
+
+  if (bestWindow) {
+    html += `<div class="best-window">⭐ Best window: ${escapeHtml(bestWindow)}</div>`;
+  }
+
+  html += '</div>';
+  return html;
+}
+
+// =============================================================================
+// HOVER POPOVER — singleton, positioned per anchor, keyboard accessible.
+// =============================================================================
+
+const POPOVER = (() => {
+  let el = null;
+  let hideTimer = null;
+  let pinned = false;
+  function ensure() {
+    if (el) return el;
+    el = document.createElement('div');
+    el.className = 'rs-popover';
+    el.setAttribute('role', 'tooltip');
+    document.body.appendChild(el);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') hide(true);
+    });
+    document.addEventListener('click', (e) => {
+      if (pinned && el && !el.contains(e.target) && !e.target.closest('[data-cell-id], [data-day-key]')) {
+        hide(true);
+      }
+    });
+    return el;
+  }
+  function show(html, anchor, opts = {}) {
+    ensure();
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+    el.innerHTML = html;
+    el.classList.toggle('rs-day-popover', !!opts.day);
+    el.classList.toggle('pinned', !!opts.pin);
+    pinned = !!opts.pin;
+    el.classList.add('show');
+    position(anchor);
+  }
+  function position(anchor) {
+    const rect = anchor.getBoundingClientRect();
+    const pop = el.getBoundingClientRect();
+    let left = rect.left + rect.width / 2 - pop.width / 2;
+    let top = rect.top - pop.height - 10;
+    if (top < 8) top = rect.bottom + 10;
+    left = Math.max(8, Math.min(left, window.innerWidth - pop.width - 8));
+    el.style.left = left + 'px';
+    el.style.top = top + 'px';
+  }
+  function hide(immediate = false) {
+    if (!el) return;
+    pinned = false;
+    el.classList.remove('pinned');
+    if (immediate) {
+      el.classList.remove('show');
+      return;
+    }
+    hideTimer = setTimeout(() => el.classList.remove('show'), 80);
+  }
+  return { show, hide };
+})();
+
+function renderHourPopover(cell, spotData) {
+  const r = Math.min(10, Math.max(0, cell.rating));
+  const tier = ratingTier(r);
+  const cellMs = cell.timestamp_utc ? new Date(cell.timestamp_utc).getTime() : null;
+  const nowMs = spotData.now_utc ? new Date(spotData.now_utc).getTime() : Date.now();
+  const rel = relativeWhen(cellMs, nowMs);
+  const tideClass = cell.tide_state === 'rising' ? 'tide-rising'
+                  : cell.tide_state === 'falling' ? 'tide-falling' : '';
+
+  const rows = [];
+  if (cell.tide_state) {
+    const h = cell.tide_height_m != null ? `${cell.tide_height_m.toFixed(2)}m` : '';
+    rows.push(`<dt>Tide</dt><dd class="${tideClass}">${escapeHtml(cell.tide_state)}${h ? ' · ' + escapeHtml(h) : ''}</dd>`);
+  }
+  if (spotData.swell_direction) {
+    rows.push(`<dt>Swell</dt><dd>from ${escapeHtml(spotData.swell_direction)}${spotData.height_m != null ? ' · ' + escapeHtml(spotData.height_m) + 'm' : ''}${spotData.period_s != null ? ' / ' + escapeHtml(spotData.period_s) + 's' : ''}</dd>`);
+  }
+  if (spotData.wind_state) {
+    rows.push(`<dt>Wind</dt><dd>${escapeHtml(spotData.wind_state)}</dd>`);
+  }
+
+  return `
+    <div class="rs-pop-header">
+      <div>
+        <div class="rs-pop-when">${escapeHtml(cell.day)} · ${escapeHtml(cell.time)}</div>
+        ${rel ? `<div class="rs-pop-when-rel ${rel.isNow ? 'is-now' : ''}">${escapeHtml(rel.text)}</div>` : ''}
+      </div>
+      <div class="rs-pop-chip r-${tier}">${r}/10</div>
+    </div>
+    ${rows.length ? `<dl class="rs-pop-rows">${rows.join('')}</dl>` : ''}
+    <div class="rs-pop-foot">Rating reflects surf-forecast.com's site rating for the 3-hour block.</div>
+  `;
+}
+
+function renderDayPopover(group, spotData) {
+  const cells = group.cells;
+  const nowMs = spotData.now_utc ? new Date(spotData.now_utc).getTime() : Date.now();
+  const ratings = cells.map(c => c.rating);
+  const minR = Math.min(...ratings), maxR = Math.max(...ratings);
+
+  const future = cells.filter(c => c.timestamp_utc && new Date(c.timestamp_utc).getTime() >= nowMs - 3_600_000);
+  const pool = future.length ? future : cells;
+  const bestCell = pool.reduce((a, b) => (b.rating > a.rating ? b : a), pool[0]);
+  const bestRel = bestCell && bestCell.timestamp_utc
+    ? relativeWhen(new Date(bestCell.timestamp_utc).getTime(), nowMs)
+    : null;
+  const bestEmpty = bestCell.rating < 2;
+
+  // Sparkline
+  const W = 220, H = 36, pad = 2;
+  const step = (W - pad * 2) / Math.max(1, cells.length);
+  const bars = cells.map((c, i) => {
+    const r = Math.min(10, Math.max(0, c.rating));
+    const h = Math.max(2, (r / 10) * (H - 4));
+    const x = pad + i * step;
+    const y = H - h - 2;
+    const past = c.timestamp_utc && new Date(c.timestamp_utc).getTime() < nowMs - 1.5 * 3_600_000;
+    const fill = r >= 4 ? 'var(--green-bright)' : r >= 2 ? 'var(--yellow-bright)' : 'var(--text-faint)';
+    return `<rect class="rs-spark-bar ${past ? 'is-past' : ''}" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(step - 2).toFixed(1)}" height="${h.toFixed(1)}" rx="1.5" fill="${fill}"/>`;
+  }).join('');
+
+  // Tide turns for this day
+  const dayTides = (spotData.tide && spotData.tide.events ? spotData.tide.events : []).filter(ev => {
+    if (!cells.length) return false;
+    const evDt = new Date(ev.time);
+    const cellsTs = cells.map(c => c.timestamp_utc ? new Date(c.timestamp_utc) : null).filter(Boolean);
+    if (!cellsTs.length) return false;
+    const dayStart = new Date(cellsTs[0]); dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart); dayEnd.setHours(24, 0, 0, 0);
+    return evDt >= dayStart && evDt < dayEnd;
+  });
+
+  const tideText = dayTides.length
+    ? dayTides.map(ev => {
+        const t = new Date(ev.time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        return `${ev.type === 'high' ? '↑' : '↓'} ${t} · ${ev.height_m}m`;
+      }).join(' · ')
+    : null;
+
+  const bestLine = bestEmpty
+    ? '<div class="rs-day-best is-empty">No standout window — flat-ish day.</div>'
+    : `<div class="rs-day-best">⭐ Best ${future.length ? 'upcoming' : ''} hour: ${escapeHtml(bestCell.time)} · ${bestCell.rating}/10${bestRel ? ' <span class="rs-pop-when-rel ' + (bestRel.isNow ? 'is-now' : '') + '">(' + escapeHtml(bestRel.text) + ')</span>' : ''}</div>`;
+
+  return `
+    <div class="rs-pop-header">
+      <div class="rs-pop-when">${escapeHtml(group.day)}</div>
+      <div class="rs-pop-chip r-${ratingTier(maxR)}">${minR}–${maxR}/10</div>
+    </div>
+    <svg class="rs-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${bars}</svg>
+    ${bestLine}
+    ${tideText ? `<dl class="rs-pop-rows"><dt>Tide</dt><dd>${escapeHtml(tideText)}</dd></dl>` : ''}
+    <div class="rs-pop-foot">${cells.length} 3-hour blocks · click again to dismiss.</div>
+  `;
+}
+
+function bindForecastStripInteractions(card, data) {
+  const groupsByDay = {};
+  if (data.rating_timeline) {
+    let lastDay = null;
+    for (const cell of data.rating_timeline) {
+      if (cell.day !== lastDay) { groupsByDay[encodeURIComponent(cell.day)] = { day: cell.day, cells: [] }; lastDay = cell.day; }
+      groupsByDay[encodeURIComponent(cell.day)].cells.push(cell);
+    }
+  }
+  const cellsById = {};
+  Object.values(groupsByDay).forEach(g => g.cells.forEach((c, i) => {
+    cellsById[`${encodeURIComponent(g.day)}_${i}`] = c;
+  }));
+
+  card.querySelectorAll('.rating-cell').forEach(btn => {
+    const id = btn.dataset.cellId;
+    const cell = cellsById[id];
+    if (!cell) return;
+    const open = (pin = false) => POPOVER.show(renderHourPopover(cell, data), btn, { pin });
+    btn.addEventListener('mouseenter', () => open(false));
+    btn.addEventListener('focus', () => open(false));
+    btn.addEventListener('mouseleave', () => POPOVER.hide(false));
+    btn.addEventListener('blur', () => POPOVER.hide(false));
+    btn.addEventListener('click', (e) => { e.stopPropagation(); open(true); });
+  });
+
+  card.querySelectorAll('.rating-day-label').forEach(btn => {
+    const key = btn.dataset.dayKey;
+    const group = groupsByDay[key];
+    if (!group) return;
+    const open = (pin = false) => POPOVER.show(renderDayPopover(group, data), btn, { day: true, pin });
+    btn.addEventListener('mouseenter', () => open(false));
+    btn.addEventListener('focus', () => open(false));
+    btn.addEventListener('mouseleave', () => POPOVER.hide(false));
+    btn.addEventListener('blur', () => POPOVER.hide(false));
+    btn.addEventListener('click', (e) => { e.stopPropagation(); open(true); });
+  });
+}
+
+function renderCard(spot, data) {
+  destroyWebcam(spot.id);
+  const card = document.getElementById('card-' + spot.id);
+  if (!card) return;
+  const time = data.fetched_at
+    ? new Date(data.fetched_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})
+    : '—';
+  const verdictClass = data.verdict || 'empty';
+  const ratingDisplay = (data.rating != null) ? data.rating + '/10' : '—';
+  const tideDisplay = data.tide && data.tide.summary ? data.tide.summary : '—';
+
+  card.innerHTML = `
+    <div class="card-header">
+      <div class="spot-name">${escapeHtml(spot.name)}</div>
+      <div class="last-sync">synced ${time}</div>
+    </div>
+    <div class="verdict ${verdictClass}">${escapeHtml(data.verdict_text)}</div>
+    <div class="params">
+      <div class="param-label">Height</div><div></div>
+      <div class="param-value">${escapeHtml(fmt(data.height_m, 'm'))}</div>
+      <div class="param-label">Period</div><div></div>
+      <div class="param-value">${escapeHtml(fmt(data.period_s, 's'))}</div>
+      <div class="param-label">Swell from</div><div></div>
+      <div class="param-value">${escapeHtml(fmt(data.swell_direction))}</div>
+      <div class="param-label">Wind</div><div></div>
+      <div class="param-value">${escapeHtml(fmt(data.wind_state))}</div>
+      <div class="param-label">Tide</div><div></div>
+      <div class="param-value tide-value">${escapeHtml(tideDisplay)}</div>
+      <div class="param-label">Site rating</div><div></div>
+      <div class="param-value muted">${escapeHtml(ratingDisplay)}</div>
+    </div>
+    ${renderForecastStrip(data)}
+    <div class="explanations">
+      <h3>Why?</h3>
+      <ul>
+        ${(data.details || []).map(d => `
+          <li class="${escapeHtml(d.color)}">
+            <span><strong>${escapeHtml(d.label)}:</strong> ${escapeHtml(d.explanation)}</span>
+          </li>`).join('')}
+      </ul>
+    </div>
+    <div class="extras">
+      <span class="extras-info">${
+        data.wetsuit
+          ? ICON_DROPLET + '<span>' + escapeHtml(data.wetsuit) + '</span>'
+          : (data.sea_temp_c != null
+              ? ICON_DROPLET + '<span>' + escapeHtml(data.sea_temp_c) + '°C water</span>'
+              : '')
+      }</span>
+      <a class="url-link" href="${escapeHtml(spot.url)}" target="_blank" rel="noopener">View on surf-forecast.com ${ICON_EXTERNAL}</a>
+    </div>
+    ${renderWebcam(spot)}`;
+  bindForecastStripInteractions(card, data);
+  initWebcam(spot);
+}
+
+function friendlyError(err) {
+  const message = err && err.message ? err.message : String(err);
+  if (err instanceof TypeError || /Failed to fetch|NetworkError|Load failed/i.test(message)) {
+    return `Local server is not reachable. Run "python server.py" in this folder, then open http://127.0.0.1:8765. (${message})`;
+  }
+  return message;
+}
+
+async function syncAll() {
+  syncBtn.disabled = true;
+  syncBtn.textContent = 'Syncing...';
+  SPOTS.forEach(s => setLoading(s.id));
+
+  await Promise.all(SPOTS.map(async (spot) => {
+    try {
+      const data = await scrape(spot);
+      renderCard(spot, data);
+    } catch (err) {
+      renderError(spot, `Couldn't fetch forecast: ${friendlyError(err)}`);
+    }
+  }));
+
+  syncBtn.disabled = false;
+  syncBtn.textContent = 'Sync All';
+}
+
+const levelSelect = document.getElementById('levelSelect');
+levelSelect.value = currentLevel;
+levelSelect.addEventListener('change', () => {
+  const next = levelSelect.value;
+  if (!VALID_LEVELS.includes(next) || next === currentLevel) return;
+  currentLevel = next;
+  localStorage.setItem(LEVEL_STORAGE_KEY, currentLevel);
+  syncAll();
+});
+
+syncBtn.addEventListener('click', syncAll);
+renderEmpty();
+syncAll();
+</script>
+</body>
+</html>

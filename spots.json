@@ -1,0 +1,22 @@
+[
+  {
+    "id": "carcavelos",
+    "name": "Carcavelos",
+    "url": "https://www.surf-forecast.com/breaks/Carcavelos/forecasts/latest",
+    "tz": "Europe/Lisbon",
+    "optimal_swell_bearing": 260,
+    "optimal_swell_label": "W-SW",
+    "webcam_url": "https://beachcam.meo.pt/livecams/praia-de-carcavelos/",
+    "tide_window": "mid-to-high"
+  },
+  {
+    "id": "caparica",
+    "name": "Costa da Caparica",
+    "url": "https://www.surf-forecast.com/breaks/Costada-Caparica/forecasts/latest",
+    "tz": "Europe/Lisbon",
+    "optimal_swell_bearing": 250,
+    "optimal_swell_label": "WSW-SW",
+    "webcam_url": "https://beachcam.meo.pt/livecams/costa-da-caparica/",
+    "tide_window": "mid-to-high"
+  }
+]

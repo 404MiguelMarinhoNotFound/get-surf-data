@@ -21,7 +21,7 @@ SPOTS = json.loads((ROOT / "spots.json").read_text(encoding="utf-8"))
 CACHE = {}            # spot_id -> (epoch_seconds, payload)
 CACHE_TTL = 60        # seconds
 PORT = 8765
-INDEX_FILE = "surf-sync-artifact.html"
+INDEX_FILE = "public/index.html"
 
 
 def get_spot(spot_id):

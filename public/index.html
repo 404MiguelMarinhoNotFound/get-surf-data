@@ -1090,12 +1090,15 @@ function renderHourPopover(cell, spotData) {
     const h = cell.tide_height_m != null ? `${cell.tide_height_m.toFixed(2)}m` : '';
     rows.push(`<dt>Tide</dt><dd class="${tideClass}">${escapeHtml(cell.tide_state)}${h ? ' · ' + escapeHtml(h) : ''}</dd>`);
   }
-  const isNow = rel && rel.isNow;
-  if (isNow && spotData.swell_direction) {
-    rows.push(`<dt>Swell</dt><dd>from ${escapeHtml(spotData.swell_direction)}${spotData.height_m != null ? ' · ' + escapeHtml(spotData.height_m) + 'm' : ''}${spotData.period_s != null ? ' / ' + escapeHtml(spotData.period_s) + 's' : ''}</dd>`);
+  const swellDir = cell.swell_direction || spotData.swell_direction;
+  const swellH   = cell.height_m   != null ? cell.height_m   : null;
+  const swellP   = cell.period_s   != null ? cell.period_s   : null;
+  const wind     = cell.wind_state  || null;
+  if (swellDir) {
+    rows.push(`<dt>Swell</dt><dd>from ${escapeHtml(swellDir)}${swellH != null ? ' · ' + swellH + 'm' : ''}${swellP != null ? ' / ' + swellP + 's' : ''}</dd>`);
   }
-  if (isNow && spotData.wind_state) {
-    rows.push(`<dt>Wind</dt><dd>${escapeHtml(spotData.wind_state)}</dd>`);
+  if (wind) {
+    rows.push(`<dt>Wind</dt><dd>${escapeHtml(wind)}</dd>`);
   }
 
   return `
@@ -1107,7 +1110,7 @@ function renderHourPopover(cell, spotData) {
       <div class="rs-pop-chip r-${tier}">${r}/10</div>
     </div>
     ${rows.length ? `<dl class="rs-pop-rows">${rows.join('')}</dl>` : ''}
-    <div class="rs-pop-foot">Rating is surf-forecast.com's 3-hour block score. Swell &amp; wind shown only for the current block.</div>
+    <div class="rs-pop-foot">Rating &amp; swell are surf-forecast.com's per-block forecast.</div>
   `;
 }
 

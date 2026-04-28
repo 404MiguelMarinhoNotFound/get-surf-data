@@ -3,6 +3,7 @@
 Stdlib-only. Pulls the human-readable summary sentence (most reliable)
 and the sea temperature line. Returns a normalized dict.
 """
+import json
 import re
 import urllib.request
 import html as html_lib
@@ -552,6 +553,37 @@ def annotate_cells_with_tide(labeled, tide_events):
         cell["tide_state"] = "rising" if next_kind == "high" else "falling"
 
 
+def parse_swell_tooltips(html):
+    """Parse per-hour forecast data from data-swell-tooltip JSON attributes.
+
+    Returns a dict keyed by "Day DD_HH(AM|PM)" (e.g. "Tue 28_4PM") with
+    primary swell height/period/direction and wind state for each cell.
+    """
+    out = {}
+    for raw in re.findall(r'data-swell-tooltip="([^"]+)"', html):
+        try:
+            data = json.loads(html_lib.unescape(raw))
+        except (ValueError, KeyError):
+            continue
+        date_str = data.get("date", "")
+        m = re.match(r'(\w{3})\w*\s+(\d+)\s+(\d+)\s*(AM|PM)', date_str, re.IGNORECASE)
+        if not m:
+            continue
+        key = f"{m.group(1).title()} {int(m.group(2))}_{m.group(3)}{m.group(4).upper()}"
+        swells = [s for s in (data.get("swells") or []) if s]
+        primary = swells[0] if swells else None
+        if not primary:
+            continue
+        wind = (data.get("windState") or {}).get("text")
+        out[key] = {
+            "height_m": primary.get("height"),
+            "period_s": primary.get("period"),
+            "swell_direction": primary.get("letters"),
+            "wind_state": wind,
+        }
+    return out
+
+
 def scrape(url, tz_name=None):
     """Fetch a surf-forecast.com break page and return parsed conditions."""
     html = fetch_html(url)
@@ -581,6 +613,14 @@ def scrape(url, tz_name=None):
     if tide:
         data["tide"] = tide
         annotate_cells_with_tide(data.get("rating_timeline", []), tide.get("events"))
+
+    tooltip_data = parse_swell_tooltips(html)
+    if tooltip_data:
+        for cell in data.get("rating_timeline", []):
+            key = f"{cell['day']}_{cell['time']}"
+            td = tooltip_data.get(key)
+            if td:
+                cell.update({k: v for k, v in td.items() if v is not None})
 
     return data
 

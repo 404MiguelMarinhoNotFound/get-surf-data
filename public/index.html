@@ -3,6 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#020617">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Lineup">
 <title>Lineup</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -612,6 +617,49 @@
     .live-dot { animation: none; box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.16); }
     .spinner { animation-duration: 1.4s; }
     .sync-btn:disabled { animation: none; }
+  }
+
+  /* === Mobile UX Improvements === */
+
+  /* Very small phones (360px and below) */
+  @media (max-width: 360px) {
+    body { padding: 1rem 0.6rem 2rem; }
+    .card { padding: 1rem; }
+    h1 { font-size: 1.25rem; }
+    .subtitle { font-size: 0.78rem; }
+  }
+
+  /* Minimum readable font sizes on small phones */
+  @media (max-width: 480px) {
+    .rating-cell span { font-size: 0.7rem; }
+    .rs-pop-chip { font-size: 0.75rem; }
+    .forecast-header { font-size: 0.75rem; }
+  }
+
+  /* Touch targets — thumb-friendly sizing */
+  @media (max-width: 768px) {
+    .rating-cell { min-width: 28px; padding-top: 4px; padding-bottom: 4px; }
+    .sync-btn { min-height: 44px; padding: 0 1.2rem; }
+    .level-select { min-height: 44px; }
+  }
+
+  /* Disable hover transforms on touch devices (prevents sticky elevated state) */
+  @media (hover: none) {
+    .card:hover { transform: none; box-shadow: var(--shadow-card); border-color: var(--glass-border); }
+    .rating-cell:hover { transform: none; }
+    .sync-btn:hover { transform: none; filter: none; }
+  }
+
+  /* Landscape phones with short viewports */
+  @media (max-height: 500px) and (orientation: landscape) {
+    body { padding-top: 0.75rem; }
+    header { padding: 0.5rem 0; }
+    .brand-icon { width: 32px; height: 32px; }
+  }
+
+  /* Tablet: explicit 2-column grid */
+  @media (min-width: 601px) and (max-width: 900px) {
+    .cards { grid-template-columns: repeat(2, 1fr); }
   }
 </style>
 </head>
@@ -1258,6 +1306,11 @@ levelSelect.addEventListener('change', () => {
 syncBtn.addEventListener('click', syncAll);
 renderEmpty();
 syncAll();
+</script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js');
+  }
 </script>
 </body>
 </html>

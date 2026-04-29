@@ -7,6 +7,7 @@ Stdlib only. Caches scraped data per-spot for 60s so spamming Sync
 doesn't hammer the upstream site.
 """
 import json
+import mimetypes
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -135,6 +136,10 @@ class Handler(BaseHTTPRequestHandler):
         if url.path in ("/", "/index.html", f"/{INDEX_FILE}"):
             return self._serve_file(INDEX_FILE, "text/html; charset=utf-8")
 
+        static_response = self._serve_public_asset(url.path)
+        if static_response:
+            return
+
         if url.path == "/api/spots":
             return self._send_json(
                 [{"id": s["id"], "name": s["name"], "url": s["url"]} for s in SPOTS]
@@ -163,6 +168,20 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    def _serve_public_asset(self, url_path):
+        relative = url_path.lstrip("/")
+        if not relative or relative.startswith("api/"):
+            return False
+
+        public_root = (ROOT / "public").resolve()
+        path = (public_root / relative).resolve()
+        if not path.is_file() or not path.is_relative_to(public_root):
+            return False
+
+        content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        self._serve_file(str(path.relative_to(ROOT)), content_type)
+        return True
 
     def _send_json(self, data, status=200):
         body = json.dumps(data).encode("utf-8")

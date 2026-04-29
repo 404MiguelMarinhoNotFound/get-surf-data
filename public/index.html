@@ -165,36 +165,6 @@
   .level-select:focus-visible { border-color: var(--accent); box-shadow: var(--glow-cyan); }
   .level-select option { background: #061a2e; color: var(--text); }
 
-  .sync-btn {
-    position: relative;
-    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-deep) 100%);
-    color: #021018; border: none;
-    padding: 0.78rem 1.5rem; border-radius: 12px;
-    font-family: 'Space Grotesk', 'Inter', sans-serif;
-    font-weight: 600; font-size: 0.95rem; letter-spacing: 0.01em;
-    cursor: pointer; overflow: hidden;
-    box-shadow: 0 10px 28px -10px rgba(34, 211, 238, 0.55), inset 0 1px 0 rgba(255,255,255,0.35);
-    transition: transform 0.18s var(--ease), box-shadow 0.25s var(--ease), filter 0.2s ease;
-  }
-  .sync-btn::before {
-    content: "";
-    position: absolute; inset: 0;
-    background: linear-gradient(135deg, rgba(255,255,255,0.18), transparent 55%);
-    pointer-events: none;
-  }
-  .sync-btn:hover { transform: translateY(-1px); box-shadow: 0 14px 32px -10px rgba(34, 211, 238, 0.7), inset 0 1px 0 rgba(255,255,255,0.4); filter: brightness(1.05); }
-  .sync-btn:active { transform: translateY(0) scale(0.98); }
-  .sync-btn:disabled {
-    cursor: wait;
-    background: linear-gradient(135deg, rgba(34, 211, 238, 0.45), rgba(14, 165, 233, 0.4));
-    box-shadow: none;
-    animation: pulse-disabled 1.6s ease-in-out infinite;
-  }
-  @keyframes pulse-disabled {
-    0%,100% { opacity: 0.7; }
-    50%     { opacity: 0.95; }
-  }
-
   .cards {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
@@ -866,11 +836,17 @@
     font-weight: 500; display: flex; align-items: center; gap: 0.35rem;
   }
 
-  .footnote {
+  .site-credit {
     color: var(--text-faint); font-size: 0.75rem;
-    margin-top: 2rem; text-align: center;
+    margin-top: 2rem; text-align: right;
     letter-spacing: 0.01em;
   }
+  .site-credit a {
+    color: var(--text-dim);
+    text-decoration: none;
+    transition: color 0.18s ease;
+  }
+  .site-credit a:hover { color: var(--accent-bright); }
 
   *:focus-visible {
     outline: 2px solid var(--accent);
@@ -881,9 +857,8 @@
   @media (max-width: 600px) {
     .cards { grid-template-columns: 1fr; gap: 1.1rem; }
     header { flex-direction: column; align-items: stretch; gap: 0.75rem; }
-    .header-controls { justify-content: space-between; width: 100%; }
-    .level-select { flex: 1; }
-    .sync-btn { flex-shrink: 0; }
+    .header-controls { justify-content: flex-end; width: 100%; }
+    .level-select { width: 100%; }
     .hero-headline { font-size: 1.25rem; }
     .hero-window { grid-template-columns: 1fr; }
     .hero-window-score { justify-self: start; }
@@ -911,11 +886,10 @@
 
   @media (prefers-reduced-motion: reduce) {
     body::before { animation: none; }
-    .card, .verdict, .sync-btn { animation: none !important; transition: none !important; }
+    .card, .verdict { animation: none !important; transition: none !important; }
     .card:hover { transform: none; }
     .live-dot { animation: none; box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.16); }
     .spinner { animation-duration: 1.4s; }
-    .sync-btn:disabled { animation: none; }
   }
 
   /* === Mobile UX Improvements === */
@@ -938,7 +912,6 @@
   /* Touch targets — thumb-friendly sizing */
   @media (max-width: 768px) {
     .rating-cell { min-width: 28px; padding-top: 4px; padding-bottom: 4px; }
-    .sync-btn { min-height: 44px; padding: 0 1.2rem; }
     .level-select { min-height: 44px; }
   }
 
@@ -946,7 +919,6 @@
   @media (hover: none) {
     .card:hover { transform: none; box-shadow: var(--shadow-card); border-color: var(--glass-border); }
     .rating-cell:hover { transform: none; }
-    .sync-btn:hover { transform: none; filter: none; }
   }
 
   /* Landscape phones with short viewports */
@@ -1071,12 +1043,11 @@
         <option value="intermediate">Intermediate</option>
         <option value="advanced">Advanced</option>
       </select>
-      <button class="sync-btn" id="syncBtn">Sync All</button>
     </div>
   </header>
   <div class="cards" id="cards"></div>
-  <div class="footnote">
-    Each sync asks the local server to fetch surf-forecast.com and grade the latest conditions.
+  <div class="site-credit">
+    built by <a href="https://mmarinhofs.com" target="_blank" rel="noopener">mmarinhofs.com</a>
   </div>
 </div>
 
@@ -1146,7 +1117,6 @@ async function scrape(spot) {
 // =============================================================================
 
 const cardsEl = document.getElementById('cards');
-const syncBtn = document.getElementById('syncBtn');
 
 // Inline SVG icons (Lucide-style, 24x24 viewBox, currentColor stroke)
 const ICON_DROPLET = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5s5.5 6 5.5 11a5.5 5.5 0 1 1-11 0c0-5 5.5-11 5.5-11Z"/></svg>`;
@@ -1268,7 +1238,7 @@ function renderEmpty() {
       <div class="verdict empty">
         <div class="empty-state">
           ${ICON_COMPASS}
-          <span>Press <strong>Sync All</strong> to load conditions</span>
+          <span>Loading latest conditions...</span>
         </div>
       </div>
       ${renderWebcam(s)}
@@ -1930,8 +1900,6 @@ function friendlyError(err) {
 }
 
 async function syncAll() {
-  syncBtn.disabled = true;
-  syncBtn.textContent = 'Syncing...';
   SPOTS.forEach(s => setLoading(s.id));
 
   await Promise.all(SPOTS.map(async (spot) => {
@@ -1942,9 +1910,6 @@ async function syncAll() {
       renderError(spot, `Couldn't fetch forecast: ${friendlyError(err)}`);
     }
   }));
-
-  syncBtn.disabled = false;
-  syncBtn.textContent = 'Sync All';
 }
 
 const levelSelect = document.getElementById('levelSelect');
@@ -1957,7 +1922,6 @@ levelSelect.addEventListener('change', () => {
   syncAll();
 });
 
-syncBtn.addEventListener('click', syncAll);
 renderEmpty();
 syncAll();
 </script>

@@ -10,6 +10,7 @@ import scraper
 import explainer
 import open_meteo
 import open_meteo_explainer
+import unified_explainer
 
 ROOT = Path(__file__).resolve().parent.parent
 SPOTS = json.loads((ROOT / "spots.json").read_text(encoding="utf-8"))
@@ -88,6 +89,15 @@ def _sync_spot(spot_id, level=explainer.DEFAULT_LEVEL):
     else:
         data["om_analysis"] = None
         data["om_error"] = om_error[0] or "Open-Meteo fetch failed"
+
+    om_hourly = om_result[0].get("hourly", []) if om_result[0] else []
+    data["unified"] = unified_explainer.unify(
+        sf_data=data,
+        om_analysis=data.get("om_analysis"),
+        om_hourly=om_hourly,
+        spot=spot,
+        level=level,
+    )
 
     return data
 

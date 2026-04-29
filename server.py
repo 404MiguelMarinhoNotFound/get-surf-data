@@ -17,6 +17,7 @@ import scraper
 import explainer
 import open_meteo
 import open_meteo_explainer
+import unified_explainer
 
 ROOT = Path(__file__).resolve().parent
 SPOTS = json.loads((ROOT / "spots.json").read_text(encoding="utf-8"))
@@ -31,7 +32,7 @@ def get_spot(spot_id):
     return next((s for s in SPOTS if s["id"] == spot_id), None)
 
 
-def sync_spot(spot_id, level=explainer.DEFAULT_LEVEL):
+def sync_spot(spot_id, level=explainer.DEFAULT_LEVEL, force=False):
     spot = get_spot(spot_id)
     if not spot:
         return {"error": f"Unknown spot id: {spot_id}", "spot_id": spot_id}
@@ -41,7 +42,7 @@ def sync_spot(spot_id, level=explainer.DEFAULT_LEVEL):
 
     cache_key = (spot_id, level)
     cached = CACHE.get(cache_key)
-    if cached and (time.time() - cached[0]) < CACHE_TTL:
+    if not force and cached and (time.time() - cached[0]) < CACHE_TTL:
         return cached[1]
 
     sf_result, om_result = [None], [None]
@@ -106,6 +107,15 @@ def sync_spot(spot_id, level=explainer.DEFAULT_LEVEL):
         data["om_analysis"] = None
         data["om_error"] = om_error[0] or "Open-Meteo fetch failed"
 
+    om_hourly = om_result[0].get("hourly", []) if om_result[0] else []
+    data["unified"] = unified_explainer.unify(
+        sf_data=data,
+        om_analysis=data.get("om_analysis"),
+        om_hourly=om_hourly,
+        spot=spot,
+        level=level,
+    )
+
     CACHE[cache_key] = (time.time(), data)
     return data
 
@@ -136,7 +146,8 @@ class Handler(BaseHTTPRequestHandler):
             level = qs.get("level", [explainer.DEFAULT_LEVEL])[0]
             if not spot_id:
                 return self._send_json({"error": "missing 'spot' query param"}, status=400)
-            return self._send_json(sync_spot(spot_id, level))
+            force = "_" in qs or qs.get("refresh", ["0"])[0] in ("1", "true", "yes")
+            return self._send_json(sync_spot(spot_id, level, force=force))
 
         self.send_error(404, "Not Found")
 

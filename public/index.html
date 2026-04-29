@@ -325,6 +325,290 @@
   }
   .webcam-open-btn:hover { background: rgba(6,182,212,0.25); }
 
+  .hero-card {
+    padding: 1.1rem 1.2rem;
+    border-radius: 14px;
+    margin-bottom: 1rem;
+  }
+  .hero-card.tier-gold {
+    background: linear-gradient(135deg, rgba(251,191,36,0.18), rgba(245,158,11,0.10));
+    border: 1px solid rgba(251,191,36,0.45);
+  }
+  .hero-card.tier-green {
+    background: rgba(16,185,129,0.10);
+    border: 1px solid rgba(16,185,129,0.32);
+  }
+  .hero-card.tier-yellow {
+    background: rgba(251,191,36,0.08);
+    border: 1px solid rgba(251,191,36,0.28);
+  }
+  .hero-card.tier-red {
+    background: rgba(248,113,113,0.08);
+    border: 1px solid rgba(248,113,113,0.25);
+  }
+  .hero-tier-badge {
+    font-size: 0.7rem;
+    letter-spacing: 0.15em;
+    opacity: 0.85;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .hero-headline {
+    font-size: 1.5rem;
+    font-weight: 800;
+    margin: 0.25rem 0 0.4rem;
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    line-height: 1.15;
+  }
+  .hero-summary {
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: var(--text);
+    margin-bottom: 0.5rem;
+  }
+  .hero-window {
+    margin: 0.72rem 0 0.35rem;
+    padding: 0.75rem 0.82rem;
+    border-radius: var(--radius-inner);
+    border: 1px solid rgba(125, 211, 252, 0.18);
+    background:
+      linear-gradient(135deg, rgba(6, 182, 212, 0.12), rgba(2, 6, 23, 0.20)),
+      rgba(2, 6, 23, 0.24);
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.5rem 0.75rem;
+    align-items: center;
+    position: relative;
+    overflow: visible;
+  }
+  .hero-window::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--accent);
+    box-shadow: 0 0 14px rgba(34, 211, 238, 0.55);
+  }
+  .hero-window-label {
+    font-size: 0.62rem;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    font-weight: 700;
+  }
+  .hero-window-label-icon {
+    margin-right: 0.35rem;
+    letter-spacing: 0;
+  }
+  .hero-window-time {
+    margin-top: 0.16rem;
+    color: var(--text);
+    font-size: 1rem;
+    font-weight: 800;
+    line-height: 1.2;
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+  }
+  .hero-window-meta {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    margin-top: 0.16rem;
+  }
+  .hero-window-reason {
+    margin-top: 0.18rem;
+    font-size: 0.72rem;
+    line-height: 1.35;
+    color: var(--text-dim);
+  }
+  .hero-window-score {
+    justify-self: end;
+    align-self: center;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.34rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: var(--accent-bright);
+    background: rgba(6, 182, 212, 0.12);
+    border: 1px solid rgba(125, 211, 252, 0.22);
+    border-radius: 999px;
+    padding: 0.25rem 0.5rem;
+    white-space: nowrap;
+    cursor: help;
+    outline: none;
+    transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s var(--ease);
+  }
+  .hero-window-score:hover,
+  .hero-window-score:focus-visible {
+    transform: translateY(-1px);
+    border-color: rgba(125, 211, 252, 0.42);
+    box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.14), 0 12px 28px -20px rgba(34, 211, 238, 0.75);
+  }
+  .hero-window-score-hint {
+    display: inline-grid;
+    place-items: center;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 999px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.62rem;
+    line-height: 1;
+    color: var(--text);
+    background: rgba(240, 249, 255, 0.10);
+    border: 1px solid rgba(240, 249, 255, 0.12);
+  }
+  .hero-score-tooltip {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 0.55rem);
+    width: min(270px, 72vw);
+    padding: 0.72rem 0.78rem;
+    border-radius: 10px;
+    background: rgba(2, 6, 23, 0.96);
+    border: 1px solid rgba(125, 211, 252, 0.24);
+    color: var(--text-dim);
+    box-shadow: 0 18px 42px -22px rgba(2, 6, 23, 0.95), inset 0 1px 0 rgba(255,255,255,0.05);
+    font-family: 'Inter', sans-serif;
+    font-size: 0.72rem;
+    font-weight: 500;
+    line-height: 1.42;
+    white-space: normal;
+    text-align: left;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity 0.16s ease, transform 0.16s var(--ease);
+    z-index: 20;
+  }
+  .hero-score-tooltip::after {
+    content: "";
+    position: absolute;
+    right: 1rem;
+    bottom: -5px;
+    width: 10px;
+    height: 10px;
+    background: rgba(2, 6, 23, 0.96);
+    border-right: 1px solid rgba(125, 211, 252, 0.24);
+    border-bottom: 1px solid rgba(125, 211, 252, 0.24);
+    transform: rotate(45deg);
+  }
+  .hero-score-tooltip-title {
+    display: block;
+    color: var(--text);
+    font-weight: 700;
+    margin-bottom: 0.18rem;
+  }
+  .hero-window-score:hover .hero-score-tooltip,
+  .hero-window-score:focus-visible .hero-score-tooltip {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .hero-window-empty {
+    grid-column: 1 / -1;
+    color: var(--text-dim);
+    font-size: 0.82rem;
+    line-height: 1.4;
+  }
+  .hero-card.tier-gold .hero-window {
+    border-color: rgba(251,191,36,0.30);
+    background:
+      linear-gradient(135deg, rgba(251,191,36,0.14), rgba(2, 6, 23, 0.18)),
+      rgba(2, 6, 23, 0.24);
+  }
+  .hero-card.tier-gold .hero-window::before { background: var(--yellow-bright); box-shadow: 0 0 14px rgba(251,191,36,0.45); }
+  .hero-card.tier-gold .hero-window-score {
+    color: var(--yellow-bright);
+    background: rgba(251,191,36,0.12);
+    border-color: rgba(251,191,36,0.28);
+  }
+  .hero-window.window-best,
+  .hero-card.tier-red .hero-window.window-best {
+    border-color: rgba(34,211,238,0.32);
+    background:
+      linear-gradient(135deg, rgba(34,211,238,0.16), rgba(16,185,129,0.08)),
+      rgba(2, 6, 23, 0.24);
+  }
+  .hero-window.window-best::before,
+  .hero-card.tier-red .hero-window.window-best::before {
+    background: var(--accent);
+    box-shadow: 0 0 16px rgba(34,211,238,0.55);
+  }
+  .hero-window.window-best .hero-window-score,
+  .hero-card.tier-red .hero-window.window-best .hero-window-score {
+    color: var(--accent-bright);
+    background: rgba(34,211,238,0.12);
+    border-color: rgba(125,211,252,0.28);
+  }
+  .hero-window.window-best.window-gold,
+  .hero-card.tier-red .hero-window.window-best.window-gold {
+    border-color: rgba(251,191,36,0.36);
+    background:
+      linear-gradient(135deg, rgba(251,191,36,0.18), rgba(34,211,238,0.08)),
+      rgba(2, 6, 23, 0.24);
+  }
+  .hero-window.window-best.window-gold::before,
+  .hero-card.tier-red .hero-window.window-best.window-gold::before {
+    background: var(--yellow-bright);
+    box-shadow: 0 0 16px rgba(251,191,36,0.48);
+  }
+  .hero-window.window-best.window-gold .hero-window-score,
+  .hero-card.tier-red .hero-window.window-best.window-gold .hero-window-score {
+    color: var(--yellow-bright);
+    background: rgba(251,191,36,0.13);
+    border-color: rgba(251,191,36,0.30);
+  }
+  .hero-window.window-current {
+    border-color: rgba(16,185,129,0.30);
+    background:
+      linear-gradient(135deg, rgba(16,185,129,0.13), rgba(34,211,238,0.07)),
+      rgba(2, 6, 23, 0.24);
+  }
+  .hero-window.window-current::before {
+    background: var(--green-bright);
+    box-shadow: 0 0 16px rgba(16,185,129,0.45);
+  }
+  .hero-agreement {
+    font-size: 0.74rem;
+    color: var(--text-faint);
+    margin-bottom: 0.6rem;
+  }
+  .hero-reason {
+    font-size: 0.84rem;
+    color: var(--text-dim);
+    line-height: 1.45;
+    margin-bottom: 0.55rem;
+  }
+  .hero-next-windows {
+    padding-top: 0.55rem;
+    border-top: 1px solid rgba(148,163,184,0.12);
+    display: grid;
+    gap: 0.3rem;
+    font-size: 0.78rem;
+  }
+  .hero-next-row {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+  .hero-next-label { color: var(--text-dim); }
+  .hero-next-value {
+    font-weight: 600;
+    color: var(--text);
+  }
+  .hero-toggle-details {
+    margin-top: 0.65rem;
+    background: none;
+    border: 1px solid rgba(148,163,184,0.2);
+    color: var(--text-dim);
+    padding: 0.32rem 0.7rem;
+    border-radius: 6px;
+    font-size: 0.74rem;
+    cursor: pointer;
+  }
+  .hero-toggle-details:hover { background: rgba(148,163,184,0.08); }
+  .card-details[hidden] { display: none; }
+
   .params {
     display: grid;
     grid-template-columns: auto 1fr auto;
@@ -597,6 +881,18 @@
     .header-controls { justify-content: space-between; width: 100%; }
     .level-select { flex: 1; }
     .sync-btn { flex-shrink: 0; }
+    .hero-headline { font-size: 1.25rem; }
+    .hero-window { grid-template-columns: 1fr; }
+    .hero-window-score { justify-self: start; }
+    .hero-score-tooltip {
+      left: 0;
+      right: auto;
+      width: min(270px, calc(100vw - 3rem));
+    }
+    .hero-score-tooltip::after {
+      left: 1rem;
+      right: auto;
+    }
   }
 
   @media (max-width: 480px) {
@@ -821,14 +1117,15 @@ let currentLevel = readStoredLevel();
 const LOCAL_SERVER =
   ['127.0.0.1', 'localhost'].includes(window.location.hostname) &&
   window.location.port === '8765';
-const API_ORIGIN = LOCAL_SERVER ? 'http://127.0.0.1:8765' : '';
+const FILE_PREVIEW = window.location.protocol === 'file:';
+const API_ORIGIN = (LOCAL_SERVER || FILE_PREVIEW) ? 'http://127.0.0.1:8765' : '';
 
 function apiUrl(path) {
   return API_ORIGIN + path;
 }
 
 async function scrape(spot) {
-  const qs = `?spot=${encodeURIComponent(spot.id)}&level=${encodeURIComponent(currentLevel)}`;
+  const qs = `?spot=${encodeURIComponent(spot.id)}&level=${encodeURIComponent(currentLevel)}&_=${Date.now()}`;
   const response = await fetch(apiUrl('/api/sync' + qs));
 
   if (!response.ok) {
@@ -1030,6 +1327,47 @@ function temporalClass(cellMs, nowMs) {
   return 'is-future';
 }
 
+function cellTimestampMs(cell) {
+  if (!cell || !cell.timestamp_utc) return null;
+  const ms = new Date(cell.timestamp_utc).getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function cellTime24(cell) {
+  const ms = cellTimestampMs(cell);
+  if (ms != null) {
+    return new Date(ms).toISOString().slice(11, 13);
+  }
+  const match = String(cell && cell.time ? cell.time : '').match(/^(\d{1,2})\s*(AM|PM)$/i);
+  if (!match) return cell && cell.time ? cell.time : '—';
+  let h = Number(match[1]);
+  const mer = match[2].toUpperCase();
+  if (mer === 'AM' && h === 12) h = 0;
+  if (mer === 'PM' && h !== 12) h += 12;
+  return String(h).padStart(2, '0');
+}
+
+function ratingTimelineGroups(timeline) {
+  const withOrder = (timeline || []).map((cell, idx) => ({ cell, idx, ms: cellTimestampMs(cell) }));
+  const ordered = withOrder.sort((a, b) => {
+    if (a.ms != null && b.ms != null) return a.ms - b.ms;
+    if (a.ms != null) return -1;
+    if (b.ms != null) return 1;
+    return a.idx - b.idx;
+  });
+  const byDay = [];
+  let lastDay = null;
+  for (const item of ordered) {
+    const cell = item.cell;
+    if (cell.day !== lastDay) {
+      byDay.push({ day: cell.day, cells: [] });
+      lastDay = cell.day;
+    }
+    byDay[byDay.length - 1].cells.push(cell);
+  }
+  return byDay;
+}
+
 function renderForecastStrip(data) {
   const slots = data.today_slots;
   const timeline = data.rating_timeline;
@@ -1058,17 +1396,13 @@ function renderForecastStrip(data) {
 
   // 3-hourly rating bars
   if (timeline && timeline.length) {
-    const byDay = [];
-    let lastDay = null;
-    for (const cell of timeline) {
-      if (cell.day !== lastDay) { byDay.push({ day: cell.day, cells: [] }); lastDay = cell.day; }
-      byDay[byDay.length - 1].cells.push(cell);
-    }
+    const byDay = ratingTimelineGroups(timeline);
     // Identify "today" group as the first one whose first cell is not in the past.
     const todayDay = (() => {
       for (const g of byDay) {
         for (const c of g.cells) {
-          if (c.timestamp_utc && new Date(c.timestamp_utc).getTime() >= nowMs - 24 * 3_600_000) return g.day;
+          const ms = cellTimestampMs(c);
+          if (ms != null && ms >= nowMs - 24 * 3_600_000) return g.day;
         }
       }
       return byDay[0] ? byDay[0].day : null;
@@ -1084,12 +1418,13 @@ function renderForecastStrip(data) {
       for (let i = 0; i < group.cells.length; i++) {
         const cell = group.cells[i];
         const r = Math.min(10, Math.max(0, cell.rating));
-        const cellMs = cell.timestamp_utc ? new Date(cell.timestamp_utc).getTime() : null;
+        const cellMs = cellTimestampMs(cell);
         const tcls = temporalClass(cellMs, nowMs);
         const cellId = `${dayKey}_${i}`;
-        html += `<button type="button" class="rating-cell ${tcls}" data-cell-id="${escapeHtml(cellId)}" aria-label="${escapeHtml(cell.day)} ${escapeHtml(cell.time)}, rating ${r} of 10">
+        const timeLabel = cellTime24(cell);
+        html += `<button type="button" class="rating-cell ${tcls}" data-cell-id="${escapeHtml(cellId)}" aria-label="${escapeHtml(cell.day)} ${escapeHtml(timeLabel)}, rating ${r} of 10">
           <div class="rating-bar r${r}"></div>
-          <span>${escapeHtml(cell.time.replace(/([AP]M)/, ''))}</span>
+          <span>${escapeHtml(timeLabel)}</span>
         </button>`;
       }
       html += '</div></div>';
@@ -1190,7 +1525,7 @@ function renderHourPopover(cell, spotData) {
   return `
     <div class="rs-pop-header">
       <div>
-        <div class="rs-pop-when">${escapeHtml(cell.day)} · ${escapeHtml(cell.time)}</div>
+        <div class="rs-pop-when">${escapeHtml(cell.day)} · ${escapeHtml(cellTime24(cell))}</div>
         ${rel ? `<div class="rs-pop-when-rel ${rel.isNow ? 'is-now' : ''}">${escapeHtml(rel.text)}</div>` : ''}
       </div>
       <div class="rs-pop-chip r-${tier}">${r}/10</div>
@@ -1240,14 +1575,14 @@ function renderDayPopover(group, spotData) {
 
   const tideText = dayTides.length
     ? dayTides.map(ev => {
-        const t = new Date(ev.time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        const t = new Date(ev.time).toISOString().slice(11, 16);
         return `${ev.type === 'high' ? '↑' : '↓'} ${t} · ${ev.height_m}m`;
       }).join(' · ')
     : null;
 
   const bestLine = bestEmpty
     ? '<div class="rs-day-best is-empty">No standout window — flat-ish day.</div>'
-    : `<div class="rs-day-best">⭐ Best ${future.length ? 'upcoming' : ''} hour: ${escapeHtml(bestCell.time)} · ${bestCell.rating}/10${bestRel ? ' <span class="rs-pop-when-rel ' + (bestRel.isNow ? 'is-now' : '') + '">(' + escapeHtml(bestRel.text) + ')</span>' : ''}</div>`;
+    : `<div class="rs-day-best">⭐ Best ${future.length ? 'upcoming' : ''} hour: ${escapeHtml(cellTime24(bestCell))} · ${bestCell.rating}/10${bestRel ? ' <span class="rs-pop-when-rel ' + (bestRel.isNow ? 'is-now' : '') + '">(' + escapeHtml(bestRel.text) + ')</span>' : ''}</div>`;
 
   return `
     <div class="rs-pop-header">
@@ -1264,10 +1599,8 @@ function renderDayPopover(group, spotData) {
 function bindForecastStripInteractions(card, data) {
   const groupsByDay = {};
   if (data.rating_timeline) {
-    let lastDay = null;
-    for (const cell of data.rating_timeline) {
-      if (cell.day !== lastDay) { groupsByDay[encodeURIComponent(cell.day)] = { day: cell.day, cells: [] }; lastDay = cell.day; }
-      groupsByDay[encodeURIComponent(cell.day)].cells.push(cell);
+    for (const group of ratingTimelineGroups(data.rating_timeline)) {
+      groupsByDay[encodeURIComponent(group.day)] = group;
     }
   }
   const cellsById = {};
@@ -1374,6 +1707,153 @@ function renderOmPanel(data) {
   </div>`;
 }
 
+function hhmmFromIso(value) {
+  if (!value) return '';
+  const match = String(value).match(/T(\d{2}:\d{2})/);
+  if (match) return compactHeroWindowLabel(match[1]);
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return '';
+  return compactHeroWindowLabel(dt.toISOString().slice(11, 16));
+}
+
+function compactHeroWindowLabel(label) {
+  return String(label || '').replace(/\b(\d{2}):00\b/g, '$1');
+}
+
+function heroScoreMeaning(score) {
+  const value = Number(score);
+  if (!Number.isFinite(value)) return null;
+
+  let title;
+  let body;
+  if (value >= 7.5) {
+    title = `${value.toFixed(1)}/10 - excellent`;
+    body = 'Prioritize this. Conditions are lining up cleanly enough to feel rare.';
+  } else if (value >= 6.2) {
+    title = `${value.toFixed(1)}/10 - good`;
+    body = 'Worth planning around. Usually clean enough to be a confident go.';
+  } else if (value >= 5) {
+    title = `${value.toFixed(1)}/10 - decent`;
+    body = 'Surfable, but with compromises. Fun if you are nearby; wait if you can be picky.';
+  } else {
+    title = `${value.toFixed(1)}/10 - poor`;
+    body = 'Usually too weak, messy, or short-lived to plan around.';
+  }
+
+  return {
+    title,
+    body: `${body} Scale: 7.5+ excellent, 6.2+ good, 5+ surfable, below 5 poor.`
+  };
+}
+
+function heroWindowParts(win) {
+  if (!win || !win.label) return null;
+  const away = Number.isFinite(win.hours_away)
+    ? (win.hours_away <= 0 ? 'now' : `in ${win.hours_away} h`)
+    : '';
+  const tier = ['gold', 'green', 'yellow', 'red'].includes(win.tier) ? win.tier : 'green';
+  const scoreValue = Number(win.score);
+  return {
+    label: compactHeroWindowLabel(win.label),
+    meta: away,
+    score: Number.isFinite(scoreValue) ? `${scoreValue.toFixed(1)}/10` : '',
+    scoreValue: Number.isFinite(scoreValue) ? scoreValue : null,
+    reason: win.reason || '',
+    tier,
+    icon: tier === 'gold' ? '🌟' : '🌤',
+    title: tier === 'gold' ? 'Gold window' : 'Best window'
+  };
+}
+
+function renderHeroWindow(win, emptyText, currentWindowText = '') {
+  if (currentWindowText) {
+    return `<div class="hero-window window-current">
+      <div>
+        <div class="hero-window-label"><span class="hero-window-label-icon" aria-hidden="true">🌊</span>Current window</div>
+        <div class="hero-window-time">${escapeHtml(currentWindowText)}</div>
+      </div>
+    </div>`;
+  }
+  const parts = heroWindowParts(win);
+  if (!parts) {
+    return `<div class="hero-window">
+      <div class="hero-window-empty">${escapeHtml(emptyText)}</div>
+    </div>`;
+  }
+  const meta = parts.meta ? `<div class="hero-window-meta">${escapeHtml(parts.meta)}</div>` : '';
+  const scoreMeaning = heroScoreMeaning(parts.scoreValue);
+  const score = parts.score ? `<span class="hero-window-score" tabindex="0" aria-label="${escapeHtml(scoreMeaning ? `${scoreMeaning.title}. ${scoreMeaning.body}` : parts.score)}">
+      <span class="hero-window-score-value">${escapeHtml(parts.score)}</span>
+      <span class="hero-window-score-hint" aria-hidden="true">?</span>
+      ${scoreMeaning ? `<span class="hero-score-tooltip" role="tooltip">
+        <span class="hero-score-tooltip-title">${escapeHtml(scoreMeaning.title)}</span>
+        ${escapeHtml(scoreMeaning.body)}
+      </span>` : ''}
+    </span>` : '';
+  return `<div class="hero-window window-best window-${escapeHtml(parts.tier)}">
+    <div>
+      <div class="hero-window-label"><span class="hero-window-label-icon" aria-hidden="true">${escapeHtml(parts.icon)}</span>${escapeHtml(parts.title)}</div>
+      <div class="hero-window-time">${escapeHtml(parts.label)}</div>
+      ${parts.reason ? `<div class="hero-window-reason">${escapeHtml(parts.reason)}</div>` : ''}
+      ${meta}
+    </div>
+    ${score}
+  </div>`;
+}
+
+function renderUnifiedHero(data) {
+  const u = data.unified;
+  if (!u) return '';
+
+  const tier = ['gold', 'green', 'yellow', 'red'].includes(u.tier) ? u.tier : 'yellow';
+  const badge = {
+    gold: 'GOLD',
+    green: 'GO',
+    yellow: 'WAIT',
+    red: 'SKIP'
+  }[tier];
+
+  const bestWindow = u.best_window || u.next_decent_window || u.next_gold_window;
+
+  let currentWindowText = '';
+  if (u.current_window_ends && u.decision === 'go') {
+    const end = hhmmFromIso(u.current_window_ends);
+    currentWindowText = end ? `Open until ${end}` : 'Open now';
+  }
+
+  const windowHtml = renderHeroWindow(
+    bestWindow,
+    'No clean window found in the next 7 days.',
+    currentWindowText
+  );
+  const reason = u.decision_reason || u.agreement_note || '';
+  const reasonHtml = reason
+    ? `<div class="hero-reason">${escapeHtml(reason)}</div>`
+    : '';
+
+  return `<div class="hero-card tier-${escapeHtml(tier)}">
+    <div class="hero-tier-badge">${escapeHtml(badge)}</div>
+    <div class="hero-headline">${escapeHtml(u.decision_headline || 'WAIT FOR A BETTER WINDOW')}</div>
+    <div class="hero-summary">${escapeHtml(u.plain_summary || '')}</div>
+    ${reasonHtml}
+    ${windowHtml}
+    <button class="hero-toggle-details" type="button" aria-expanded="false">Show technical details ▾</button>
+  </div>`;
+}
+
+function bindUnifiedHero(card) {
+  const btn = card.querySelector('.hero-toggle-details');
+  if (!btn) return;
+  btn.addEventListener('click', (e) => {
+    const details = card.querySelector('.card-details');
+    if (!details) return;
+    const expanded = details.hidden;
+    details.hidden = !expanded;
+    e.currentTarget.textContent = expanded ? 'Hide technical details ▴' : 'Show technical details ▾';
+    e.currentTarget.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  });
+}
+
 function renderCard(spot, data) {
   const card = document.getElementById('card-' + spot.id);
   if (!card) return;
@@ -1383,49 +1863,54 @@ function renderCard(spot, data) {
   const verdictClass = data.verdict || 'empty';
   const ratingDisplay = (data.rating != null) ? data.rating + '/10' : '—';
   const tideDisplay = data.tide && data.tide.summary ? data.tide.summary : '—';
+  const detailsHidden = data.unified ? ' hidden' : '';
 
   card.innerHTML = `
     <div class="card-header">
       <div class="spot-name">${escapeHtml(spot.name)}</div>
       <div class="last-sync">synced ${time}</div>
     </div>
-    <div class="verdict ${verdictClass}">${escapeHtml(data.verdict_text)}</div>
-    <div class="params">
-      <div class="param-label">Height</div><div></div>
-      <div class="param-value">${escapeHtml(fmt(data.height_m, 'm'))}</div>
-      <div class="param-label">Period</div><div></div>
-      <div class="param-value">${escapeHtml(fmt(data.period_s, 's'))}</div>
-      <div class="param-label">Swell from</div><div></div>
-      <div class="param-value">${escapeHtml(fmt(data.swell_direction))}</div>
-      <div class="param-label">Wind</div><div></div>
-      <div class="param-value">${escapeHtml(fmt(data.wind_state))}</div>
-      <div class="param-label">Tide</div><div></div>
-      <div class="param-value tide-value">${escapeHtml(tideDisplay)}</div>
-      <div class="param-label">Site rating</div><div></div>
-      <div class="param-value muted">${escapeHtml(ratingDisplay)}</div>
-    </div>
-    ${renderOmPanel(data)}
-    ${renderForecastStrip(data)}
-    <div class="explanations">
-      <h3>Why?</h3>
-      <ul>
-        ${(data.details || []).map(d => `
-          <li class="${escapeHtml(d.color)}">
-            <span><strong>${escapeHtml(d.label)}:</strong> ${escapeHtml(d.explanation)}</span>
-          </li>`).join('')}
-      </ul>
-    </div>
-    <div class="extras">
-      <span class="extras-info">${
-        data.wetsuit
-          ? ICON_DROPLET + '<span>' + escapeHtml(data.wetsuit) + '</span>'
-          : (data.sea_temp_c != null
-              ? ICON_DROPLET + '<span>' + escapeHtml(data.sea_temp_c) + '°C water</span>'
-              : '')
-      }</span>
-      <a class="url-link" href="${escapeHtml(spot.url)}" target="_blank" rel="noopener">View on surf-forecast.com ${ICON_EXTERNAL}</a>
+    ${renderUnifiedHero(data)}
+    <div class="card-details"${detailsHidden}>
+      <div class="verdict ${verdictClass}">${escapeHtml(data.verdict_text)}</div>
+      <div class="params">
+        <div class="param-label">Height</div><div></div>
+        <div class="param-value">${escapeHtml(fmt(data.height_m, 'm'))}</div>
+        <div class="param-label">Period</div><div></div>
+        <div class="param-value">${escapeHtml(fmt(data.period_s, 's'))}</div>
+        <div class="param-label">Swell from</div><div></div>
+        <div class="param-value">${escapeHtml(fmt(data.swell_direction))}</div>
+        <div class="param-label">Wind</div><div></div>
+        <div class="param-value">${escapeHtml(fmt(data.wind_state))}</div>
+        <div class="param-label">Tide</div><div></div>
+        <div class="param-value tide-value">${escapeHtml(tideDisplay)}</div>
+        <div class="param-label">Site rating</div><div></div>
+        <div class="param-value muted">${escapeHtml(ratingDisplay)}</div>
+      </div>
+      ${renderOmPanel(data)}
+      ${renderForecastStrip(data)}
+      <div class="explanations">
+        <h3>Why?</h3>
+        <ul>
+          ${(data.details || []).map(d => `
+            <li class="${escapeHtml(d.color)}">
+              <span><strong>${escapeHtml(d.label)}:</strong> ${escapeHtml(d.explanation)}</span>
+            </li>`).join('')}
+        </ul>
+      </div>
+      <div class="extras">
+        <span class="extras-info">${
+          data.wetsuit
+            ? ICON_DROPLET + '<span>' + escapeHtml(data.wetsuit) + '</span>'
+            : (data.sea_temp_c != null
+                ? ICON_DROPLET + '<span>' + escapeHtml(data.sea_temp_c) + '°C water</span>'
+                : '')
+        }</span>
+        <a class="url-link" href="${escapeHtml(spot.url)}" target="_blank" rel="noopener">View on surf-forecast.com ${ICON_EXTERNAL}</a>
+      </div>
     </div>
     ${renderWebcam(spot)}`;
+  bindUnifiedHero(card);
   bindForecastStripInteractions(card, data);
   initWebcam(spot);
 }

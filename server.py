@@ -98,6 +98,8 @@ def sync_spot(spot_id, level=explainer.DEFAULT_LEVEL):
             sf_height_m=data.get("height_m"),
             optimal_bearing=spot.get("optimal_swell_bearing"),
             offshore_bearing=spot.get("offshore_bearing"),
+            optimal_label=spot.get("optimal_swell_label"),
+            level=level,
         )
         data["om_error"] = None
     else:

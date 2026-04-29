@@ -708,6 +708,45 @@
     color: var(--text-faint, #64748b);
   }
   .om-confidence .om-badge { font-size: 0.68rem; padding: 0.18rem 0.5rem; }
+  .om-source-label {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; font-weight: 500;
+    color: var(--text-faint, #64748b); letter-spacing: 0; text-transform: none;
+    margin-left: 0.4rem;
+  }
+  .om-verdict {
+    padding: 0.5rem 0.8rem; border-radius: 8px; font-size: 0.84rem;
+    font-weight: 700; margin-bottom: 0.7rem; letter-spacing: 0.01em;
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+  }
+  .om-verdict.go    { background: rgba(16,185,129,0.12); color: var(--green-bright, #34d399); border: 1px solid rgba(16,185,129,0.3); }
+  .om-verdict.maybe { background: rgba(251,191,36,0.10); color: var(--yellow-bright, #fbbf24); border: 1px solid rgba(251,191,36,0.3); }
+  .om-verdict.skip  { background: rgba(248,113,113,0.10); color: var(--red-bright, #f87171); border: 1px solid rgba(248,113,113,0.25); }
+  .om-verdict.empty { background: rgba(100,116,139,0.10); color: var(--text-faint, #64748b); border: 1px solid rgba(148,163,184,0.2); }
+  .om-narrative {
+    font-size: 0.83rem; line-height: 1.55; color: var(--text-dim, #94a3b8);
+    margin-bottom: 0.75rem;
+  }
+  .om-details {
+    list-style: none; margin-bottom: 0.65rem;
+  }
+  .om-details li {
+    display: flex; align-items: flex-start; gap: 0.5rem;
+    padding: 0.28rem 0; font-size: 0.79rem; line-height: 1.45;
+    border-bottom: 1px solid rgba(148,163,184,0.07);
+  }
+  .om-details li:last-child { border-bottom: none; }
+  .om-details li::before {
+    content: ''; display: block; flex-shrink: 0;
+    width: 8px; height: 8px; border-radius: 50%; margin-top: 0.32rem;
+  }
+  .om-details li.green::before  { background: var(--green-bright, #34d399); }
+  .om-details li.yellow::before { background: var(--yellow-bright, #fbbf24); }
+  .om-details li.red::before    { background: var(--red-bright, #f87171); }
+  .om-details li.unknown::before { background: var(--text-faint, #64748b); }
+  .om-details li span { color: var(--text-dim, #94a3b8); }
+  .om-details li.green span strong  { color: var(--green-bright, #34d399); }
+  .om-details li.yellow span strong { color: var(--yellow-bright, #fbbf24); }
+  .om-details li.red span strong    { color: var(--red-bright, #f87171); }
 </style>
 </head>
 <body>
@@ -1266,43 +1305,70 @@ function renderOmPanel(data) {
   if (!om && !data.om_error) return '';
 
   if (data.om_error && !om) {
-    return `<div class="om-panel"><h3>Swell Analysis (Open-Meteo)</h3>
+    return `<div class="om-panel"><h3>Marine Analysis (Open-Meteo)</h3>
       <span style="color:var(--text-faint,#64748b);font-size:0.78rem">Data unavailable: ${escapeHtml(data.om_error)}</span>
     </div>`;
   }
 
-  // Badges
-  const badges = [];
-  if (om.swell_quality)       badges.push(`<span class="om-badge ${escapeHtml(om.swell_quality.color)}">${escapeHtml(om.swell_quality.label)}</span>`);
-  if (om.swell_purity)        badges.push(`<span class="om-badge ${escapeHtml(om.swell_purity.color)}">${escapeHtml(om.swell_purity.label)}</span>`);
-  if (om.direction_precision) badges.push(`<span class="om-badge ${escapeHtml(om.direction_precision.color)}">${escapeHtml(om.direction_precision.label)}${om.direction_precision.diff_deg != null ? ' (' + om.direction_precision.diff_deg + '°)' : ''}</span>`);
-  if (om.secondary_swell && om.secondary_swell.flag)
-    badges.push(`<span class="om-badge ${escapeHtml(om.secondary_swell.color)}">${escapeHtml(om.secondary_swell.label)}</span>`);
+  // --- Verdict banner ---
+  const vc = om.om_verdict || 'empty';
+  const vtIcons = { go: '&#9711;', maybe: '&#9651;', skip: '&#9632;', empty: '' };
+  const vtIcon = vtIcons[vc] || '';
+  const vtText = om.om_verdict_text || '';
+  // Strip the "(Open-Meteo)" label suffix for display — it's already in the panel header
+  const vtDisplay = vtText.replace(' (Open-Meteo)', '');
+  const verdictHtml = vtText
+    ? `<div class="om-verdict ${vc}">${vtIcon} ${escapeHtml(vtDisplay)}</div>`
+    : '';
 
-  // Numbers row
-  const nums = [];
-  if (om.swell_height != null)
-    nums.push(`<div class="param-label">Swell</div><div></div><div class="param-value">${om.swell_height}m @ ${fmt(om.swell_period, 's')}</div>`);
-  if (om.wind_assessment)
-    nums.push(`<div class="param-label">Wind</div><div></div><div class="param-value">${escapeHtml(om.wind_assessment.summary)}</div>`);
-  if (om.swell_energy != null)
-    nums.push(`<div class="param-label">Energy</div><div></div><div class="param-value muted">${om.swell_energy} m²·s</div>`);
+  // --- Session narrative ---
+  const narrativeHtml = om.session_narrative
+    ? `<p class="om-narrative">${escapeHtml(om.session_narrative)}</p>`
+    : '';
 
-  // Best window
+  // --- Details bullets (like the SF "Why?" section) ---
+  const details = om.om_details || [];
+  const detailsHtml = details.length
+    ? `<ul class="om-details">
+        ${details.map(d => `<li class="${escapeHtml(d.color)}">
+          <span><strong>${escapeHtml(d.label)}:</strong> ${escapeHtml(d.explanation)}</span>
+        </li>`).join('')}
+      </ul>`
+    : '';
+
+  // --- Trend row ---
+  const windTr = om.wind_trend;
+  const swellTr = om.swell_trend;
+  const trendParts = [];
+  if (windTr && windTr.label && windTr.label !== 'Stable' && windTr.label !== 'Unknown') {
+    const tc = { Worsening: 'red', Improving: 'green', Variable: 'yellow' }[windTr.label] || 'unknown';
+    trendParts.push(`<span class="om-badge ${tc}">Wind: ${escapeHtml(windTr.label)}</span>`);
+  }
+  if (swellTr && swellTr.label && swellTr.label !== 'Stable' && swellTr.label !== 'Unknown') {
+    const tc = { Dropping: 'yellow', Building: 'green', 'Peaking then dropping': 'yellow' }[swellTr.label] || 'unknown';
+    trendParts.push(`<span class="om-badge ${tc}">Swell: ${escapeHtml(swellTr.label)}</span>`);
+  }
+  const trendsHtml = trendParts.length
+    ? `<div class="om-badges" style="margin-top:0.5rem">${trendParts.join('')}</div>`
+    : '';
+
+  // --- Best window ---
   const bw = om.best_hourly_window;
   const bwHtml = bw ? `<div class="om-best-window">Best window today: ${escapeHtml(bw.label)}</div>` : '';
 
-  // Confidence
+  // --- Confidence ---
   const conf = om.data_confidence;
-  const confHtml = conf ? `<div class="om-confidence">
+  const confHtml = conf && conf.color !== 'unknown' ? `<div class="om-confidence">
     <span class="om-badge ${escapeHtml(conf.color)}">${escapeHtml(conf.label)}</span>
     ${conf.divergence_pct != null ? `<span>${Math.round(conf.divergence_pct)}% model spread vs surf-forecast</span>` : ''}
   </div>` : '';
 
   return `<div class="om-panel">
-    <h3>Swell Analysis (Open-Meteo)</h3>
-    <div class="om-badges">${badges.join('')}</div>
-    ${nums.length ? `<div class="om-numbers">${nums.join('')}</div>` : ''}
+    <h3>Marine Analysis <span class="om-source-label">Open-Meteo</span></h3>
+    ${verdictHtml}
+    ${narrativeHtml}
+    ${detailsHtml}
+    ${trendsHtml}
     ${bwHtml}
     ${confHtml}
   </div>`;

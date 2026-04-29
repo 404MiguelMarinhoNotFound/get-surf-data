@@ -1066,6 +1066,26 @@
     color: var(--text-faint, #64748b); letter-spacing: 0; text-transform: none;
     margin-left: 0.4rem;
   }
+  .sources-line {
+    display: flex; flex-wrap: wrap; gap: 0.4rem;
+    margin: 0.6rem 0 0.8rem 0;
+  }
+  .source-chip {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
+    padding: 0.25rem 0.55rem; border-radius: 6px;
+    background: rgba(100,116,139,0.10); color: var(--text-dim, #94a3b8);
+    border: 1px solid rgba(148,163,184,0.18);
+  }
+  .source-chip strong { color: var(--text, #e2e8f0); font-weight: 600; }
+  .source-chip em { font-style: normal; opacity: 0.7; margin-left: 0.3rem; }
+  .source-chip.envelope-warn {
+    background: rgba(251,191,36,0.12); border-color: rgba(251,191,36,0.3);
+    color: var(--yellow-bright, #fbbf24);
+  }
+  .source-chip.envelope-ok {
+    background: rgba(16,185,129,0.10); border-color: rgba(16,185,129,0.25);
+    color: var(--green-bright, #34d399);
+  }
   .om-verdict {
     padding: 0.5rem 0.8rem; border-radius: 8px; font-size: 0.84rem;
     font-weight: 700; margin-bottom: 0.7rem; letter-spacing: 0.01em;
@@ -1765,6 +1785,61 @@ function renderOmPanel(data) {
   </div>`;
 }
 
+function renderIbiPanel(data) {
+  const ibi = data.ibi_analysis;
+  if (!ibi && !data.ibi_error) return '';
+
+  if (data.ibi_error && !ibi) {
+    return `<div class="om-panel"><h3>Marine Analysis <span class="om-source-label">Copernicus IBI</span></h3>
+      <span style="color:var(--text-faint,#64748b);font-size:0.78rem">Data unavailable: ${escapeHtml(data.ibi_error)}</span>
+    </div>`;
+  }
+
+  const vc = ibi.ibi_verdict || 'empty';
+  const vtIcons = { go: '&#9711;', maybe: '&#9651;', skip: '&#9632;', empty: '' };
+  const vtIcon = vtIcons[vc] || '';
+  const vtText = ibi.ibi_verdict_text || '';
+  const vtDisplay = vtText.replace(' (Copernicus IBI)', '');
+  const verdictHtml = vtText
+    ? `<div class="om-verdict ${vc}">${vtIcon} ${escapeHtml(vtDisplay)}</div>`
+    : '';
+
+  const details = ibi.ibi_details || [];
+  const detailsHtml = details.length
+    ? `<ul class="om-details">
+        ${details.map(d => `<li class="${escapeHtml(d.color)}">
+          <span><strong>${escapeHtml(d.label)}:</strong> ${escapeHtml(d.explanation)}</span>
+        </li>`).join('')}
+      </ul>`
+    : '';
+
+  return `<div class="om-panel">
+    <h3>Marine Analysis <span class="om-source-label">Copernicus IBI</span></h3>
+    ${verdictHtml}
+    ${detailsHtml}
+  </div>`;
+}
+
+function renderSourcesLine(data) {
+  const u = data.unified;
+  if (!u || !u.source_scores) return '';
+  const s = u.source_scores;
+  const w = u.weights || {};
+  const labels = {sf: 'Surf-Forecast', om: 'Open-Meteo', ibi: 'Copernicus IBI'};
+  const parts = ['sf', 'om', 'ibi']
+    .filter(k => s[k] != null)
+    .map(k => `<span class="source-chip"><strong>${escapeHtml(labels[k])}</strong> ${s[k]}/10 <em>w=${(w[k]*100).toFixed(0)}%</em></span>`);
+  if (!parts.length) return '';
+  const ipma = u.ipma_sanity;
+  let envelopeBadge = '';
+  if (ipma && ipma.in_envelope === false) {
+    envelopeBadge = `<span class="source-chip envelope-warn" title="Blended values outside IPMA daily range">&#9888; outside IPMA range</span>`;
+  } else if (ipma && ipma.in_envelope === true) {
+    envelopeBadge = `<span class="source-chip envelope-ok" title="Inside IPMA daily envelope">&#10003; IPMA confirmed</span>`;
+  }
+  return `<div class="sources-line">${parts.join(' ')}${envelopeBadge}</div>`;
+}
+
 function hhmmFromIso(value) {
   if (!value) return '';
   const match = String(value).match(/T(\d{2}:\d{2})/);
@@ -1945,7 +2020,9 @@ function renderCard(spot, data) {
         <div class="param-label">Site rating</div><div></div>
         <div class="param-value muted">${escapeHtml(ratingDisplay)}</div>
       </div>
+      ${renderSourcesLine(data)}
       ${renderOmPanel(data)}
+      ${renderIbiPanel(data)}
       ${renderForecastStrip(data)}
       <div class="explanations">
         <h3>Why?</h3>

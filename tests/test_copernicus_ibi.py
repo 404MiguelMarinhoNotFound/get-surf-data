@@ -1,0 +1,96 @@
+import os
+import unittest
+
+import copernicus_ibi
+import copernicus_ibi_explainer
+
+
+class ExtractValueTests(unittest.TestCase):
+    def test_parses_geojson_response(self):
+        # Copernicus WMTS GFI returns a FeatureCollection with `value` in properties.
+        body = '{"type":"FeatureCollection","features":[{"properties":{"lat":38.7,"lon":-9.3,"value":1.42,"units":"m"}}]}'
+        self.assertAlmostEqual(copernicus_ibi._extract_value(body), 1.42)
+
+    def test_parses_geojson_null_value_returns_none(self):
+        body = '{"features":[{"properties":{"lat":38.7,"lon":-9.3,"value":null}}]}'
+        self.assertIsNone(copernicus_ibi._extract_value(body))
+
+    def test_parses_value_payload(self):
+        body = '{"value": 2.7}'
+        self.assertAlmostEqual(copernicus_ibi._extract_value(body), 2.7)
+
+    def test_falls_back_to_regex(self):
+        body = "<Result><Value>1.85</Value></Result>"
+        self.assertAlmostEqual(copernicus_ibi._extract_value(body), 1.85)
+
+    def test_treats_9999_as_no_data(self):
+        body = '{"features":[{"properties":{"value":9999.0}}]}'
+        self.assertIsNone(copernicus_ibi._extract_value(body))
+
+    def test_returns_none_for_empty(self):
+        self.assertIsNone(copernicus_ibi._extract_value(""))
+
+
+class AuthHeaderTests(unittest.TestCase):
+    def test_returns_none_when_creds_missing(self):
+        old_user = os.environ.pop("COPERNICUS_USER", None)
+        old_pass = os.environ.pop("COPERNICUS_PASS", None)
+        try:
+            self.assertIsNone(copernicus_ibi._auth_header())
+        finally:
+            if old_user is not None:
+                os.environ["COPERNICUS_USER"] = old_user
+            if old_pass is not None:
+                os.environ["COPERNICUS_PASS"] = old_pass
+
+    def test_builds_basic_auth_when_creds_present(self):
+        os.environ["COPERNICUS_USER"] = "alice"
+        os.environ["COPERNICUS_PASS"] = "wonder"
+        try:
+            h = copernicus_ibi._auth_header()
+            self.assertIn("Authorization", h)
+            self.assertTrue(h["Authorization"].startswith("Basic "))
+        finally:
+            del os.environ["COPERNICUS_USER"]
+            del os.environ["COPERNICUS_PASS"]
+
+
+class FetchSoftFailureTests(unittest.TestCase):
+    def test_fetch_returns_none_when_creds_missing(self):
+        old_user = os.environ.pop("COPERNICUS_USER", None)
+        old_pass = os.environ.pop("COPERNICUS_PASS", None)
+        try:
+            self.assertIsNone(copernicus_ibi.fetch(38.7, -9.3))
+        finally:
+            if old_user is not None:
+                os.environ["COPERNICUS_USER"] = old_user
+            if old_pass is not None:
+                os.environ["COPERNICUS_PASS"] = old_pass
+
+
+class ExplainerTests(unittest.TestCase):
+    def test_interpret_all_handles_typical_payload(self):
+        current = {
+            "timestamp_utc":     "2026-04-29T10:00:00Z",
+            "wave_height":       1.2,
+            "wave_period":       11.0,
+            "swell_height":      1.0,
+            "swell_period":      11.0,
+            "swell_direction":   265.0,
+            "wind_wave_height":  0.2,
+        }
+        out = copernicus_ibi_explainer.interpret_all(
+            current=current,
+            optimal_bearing=260,
+            offshore_bearing=10,
+            optimal_label="W-SW",
+            level="improver",
+        )
+        self.assertIn("ibi_verdict", out)
+        self.assertIn("ibi_details", out)
+        # Verdict text uses the IBI label, not the OM one.
+        self.assertNotIn("Open-Meteo", out["ibi_verdict_text"] or "")
+
+
+if __name__ == "__main__":
+    unittest.main()

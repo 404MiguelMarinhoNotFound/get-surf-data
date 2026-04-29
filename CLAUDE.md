@@ -1,6 +1,6 @@
 # Lineup — surf forecast app
 
-A personal surf conditions tool for Carcavelos and Costa da Caparica | Praia do CDS (Lisbon area). Scrapes surf-forecast.com, runs a skill-aware rules engine, and serves a dark-mode single-page frontend. No external dependencies — stdlib Python only.
+A personal surf conditions tool for Carcavelos and Costa da Caparica | Praia do CDS (Lisbon area). Blends four data sources — surf-forecast.com (scraped), Open-Meteo Marine, Copernicus Marine IBI, and IPMA Portugal Oceanography — through a weighted-harmonic consensus engine, then serves a dark-mode single-page frontend. Stdlib Python only.
 
 ## Live deployment
 
@@ -11,16 +11,37 @@ A personal surf conditions tool for Carcavelos and Costa da Caparica | Praia do 
 ## Architecture
 
 ```
-scraper.py       — fetches + parses surf-forecast.com HTML (regex, stdlib urllib)
-explainer.py     — rules engine: raw data → verdict + plain-English rationale
-server.py        — local dev server (stdlib http.server, port 8765)
-api/spots.py     — Vercel serverless: GET /api/spots
-api/sync.py      — Vercel serverless: GET /api/sync?spot=<id>&level=<tier>
-public/index.html — single-file frontend (vanilla JS, no framework, no build)
-spots.json       — spot config (id, url, tz, swell bearing, tide window, webcam)
+scraper.py                    — fetches + parses surf-forecast.com HTML
+explainer.py                  — SF rules engine: raw data → verdict + rationale
+open_meteo.py                 — Open-Meteo Marine + Weather hourly client
+open_meteo_explainer.py       — OM scorer + tier-aware graders
+copernicus_ibi.py             — Copernicus Marine IBI WMS client (auth req'd)
+copernicus_ibi_explainer.py   — IBI scorer (reuses OM graders)
+ipma.py                       — IPMA Portugal daily sea-forecast client + envelope
+unified_explainer.py          — N-source weighted harmonic blend, IPMA sanity layer
+server.py                     — local dev server (port 8765)
+api/spots.py                  — Vercel serverless: GET /api/spots
+api/sync.py                   — Vercel serverless: GET /api/sync?spot=<id>&level=<tier>
+public/index.html             — single-file frontend (vanilla JS)
+spots.json                    — spot config
 ```
 
-No database. `spots.json` is the only persistent config. Forecast data is fetched live on each request; Vercel CDN caches responses for 60 seconds (`s-maxage=60`).
+No database. `spots.json` is the only persistent config. All four sources are fetched in parallel on each request; Vercel CDN caches responses for 60 seconds (`s-maxage=60`).
+
+## Data sources & blend weights
+
+| Source | Weight | Role |
+|---|---|---|
+| surf-forecast.com (SF) | 0.40 | Local human-curated rating + spot heuristics |
+| Open-Meteo Marine (OM) | 0.30 | Hourly wave/swell partitions + wind |
+| Copernicus IBI (IBI)   | 0.30 | Regional MFWAM, ECMWF wind-forced |
+| IPMA daily             | —    | Sanity envelope (Hs/period bounds — no score weight) |
+
+Weights renormalize pro-rata when a source is unavailable. The IPMA layer never modifies score; if blended Hs/period sits outside Portugal's official daily range it drops the confidence label one tier and flags the UI.
+
+### Required env vars (Vercel)
+
+- `COPERNICUS_USER`, `COPERNICUS_PASS` — Copernicus Marine credentials. If unset, IBI fetch returns None and the blend renormalizes to SF + OM.
 
 ## API
 
@@ -63,10 +84,11 @@ Add an entry to `spots.json`:
   "optimal_swell_bearing": 260,
   "optimal_swell_label": "W-SW",
   "webcam_url": "https://...",
-  "tide_window": "mid-to-high"
+  "tide_window": "mid-to-high",
+  "ipma_local_id": 1110600
 }
 ```
-No code changes needed.
+`ipma_local_id` is IPMA's `globalIdLocal` for the nearest coastal forecast cell (used only for the daily envelope sanity check). No code changes needed.
 
 ## Local dev
 
@@ -88,8 +110,12 @@ vercel --prod --yes     # manual deploy from CLI
 | File | Purpose |
 |---|---|
 | [`scraper.py`](scraper.py) | HTML fetcher + regex parser |
-| [`explainer.py`](explainer.py) | Rules engine, all four skill tiers |
+| [`explainer.py`](explainer.py) | SF rules engine, all four skill tiers |
+| [`open_meteo.py`](open_meteo.py) / [`open_meteo_explainer.py`](open_meteo_explainer.py) | OM client + scorer |
+| [`copernicus_ibi.py`](copernicus_ibi.py) / [`copernicus_ibi_explainer.py`](copernicus_ibi_explainer.py) | IBI client + scorer |
+| [`ipma.py`](ipma.py) | IPMA daily forecast + envelope check |
+| [`unified_explainer.py`](unified_explainer.py) | N-source blend, weighted harmonic mean, hard gates, windowing |
 | [`spots.json`](spots.json) | Spot configuration |
-| [`api/sync.py`](api/sync.py) | Main serverless endpoint |
-| [`public/index.html`](public/index.html) | Full frontend (1,300 lines, self-contained) |
+| [`api/sync.py`](api/sync.py) | Main serverless endpoint (4-source fan-out) |
+| [`public/index.html`](public/index.html) | Full frontend (vanilla JS, self-contained) |
 | [`tests/`](tests/) | Unit tests — run offline |

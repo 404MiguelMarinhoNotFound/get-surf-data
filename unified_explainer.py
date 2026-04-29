@@ -24,8 +24,9 @@ DECISION_SKIP = "skip"
 _KNOWN_VERDICTS = {DECISION_GO, DECISION_MAYBE, DECISION_SKIP}
 _MISSING_VERDICTS = {None, "", "empty", "unknown"}
 
-SF_WEIGHT = 0.60
-OM_WEIGHT = 0.40
+SF_WEIGHT = 0.40
+OM_WEIGHT = 0.30
+IBI_WEIGHT = 0.30
 
 SCORE_GOLD = 7.5
 SCORE_GREEN = 6.2
@@ -33,6 +34,7 @@ SCORE_BEST_WINDOW = 5.0
 
 _SF_HARD_GATE_LABELS = {"Height", "Period", "Tide"}
 _OM_HARD_GATE_LABELS = {"Wind", "Shape"}
+_IBI_HARD_GATE_LABELS = {"Height", "Period"}
 
 _SF_QUALITY_CURVE = {
     0: 0.0,
@@ -113,41 +115,68 @@ def _sf_quality_score(rating):
     return lower_score + (upper_score - lower_score) * (rating - lower)
 
 
-def _weighted_harmonic(sf_score, om_score, sf_weight=SF_WEIGHT, om_weight=OM_WEIGHT):
-    sf_score = _clamp_score(sf_score)
-    om_score = _clamp_score(om_score)
-    if sf_score is None and om_score is None:
+def _blend_inputs(sf_score, om_score, ibi_score=None):
+    """Build a {key: (score, weight)} dict, dropping None scores."""
+    raw = {
+        "sf":  (_clamp_score(sf_score),  SF_WEIGHT),
+        "om":  (_clamp_score(om_score),  OM_WEIGHT),
+        "ibi": (_clamp_score(ibi_score), IBI_WEIGHT),
+    }
+    return {k: v for k, v in raw.items() if v[0] is not None}
+
+
+def _weighted_harmonic(sf_score, om_score, ibi_score=None,
+                       sf_weight=SF_WEIGHT, om_weight=OM_WEIGHT, ibi_weight=IBI_WEIGHT):
+    """Weighted harmonic mean across 1-3 sources with pro-rata renormalization
+    when a source is missing."""
+    raw = {
+        "sf":  (_clamp_score(sf_score),  sf_weight),
+        "om":  (_clamp_score(om_score),  om_weight),
+        "ibi": (_clamp_score(ibi_score), ibi_weight),
+    }
+    available = {k: v for k, v in raw.items() if v[0] is not None}
+    if not available:
         return None
-    if sf_score is None:
-        return om_score
-    if om_score is None:
-        return sf_score
-    if sf_score <= 0 or om_score <= 0:
+    if any(score <= 0 for score, _ in available.values()):
         return 0.0
-    return 1.0 / ((sf_weight / sf_score) + (om_weight / om_score))
+    total_weight = sum(w for _, w in available.values())
+    if total_weight <= 0:
+        return None
+    return 1.0 / sum((w / total_weight) / score for score, w in available.values())
 
 
-def _confidence(sf_score, om_score):
-    sf_score = _clamp_score(sf_score)
-    om_score = _clamp_score(om_score)
-    if sf_score is None and om_score is None:
+def _confidence(sf_score, om_score, ibi_score=None):
+    inputs = _blend_inputs(sf_score, om_score, ibi_score)
+    n = len(inputs)
+    if n == 0:
         return "unknown"
-    if sf_score is None:
-        return "om_only"
-    if om_score is None:
-        return "sf_only"
-    return "high" if abs(sf_score - om_score) <= 1.5 else "mixed"
+    if n == 1:
+        only = next(iter(inputs))
+        return f"{only}_only"
+    scores = [s for s, _ in inputs.values()]
+    spread = max(scores) - min(scores)
+    if n == 2:
+        return "high" if spread <= 1.5 else "mixed"
+    # 3 sources: high if any pair within 1.5pts; gold-tier consensus if all within 1.0
+    pairs = [abs(a - b) for i, a in enumerate(scores) for b in scores[i+1:]]
+    if all(p <= 1.0 for p in pairs):
+        return "high"
+    if min(pairs) <= 1.5:
+        return "high"
+    return "mixed"
 
 
-def _consensus_score(sf_score, om_score, extra_penalty=0.0):
-    base = _weighted_harmonic(sf_score, om_score)
+def _consensus_score(sf_score, om_score, ibi_score=None, extra_penalty=0.0):
+    base = _weighted_harmonic(sf_score, om_score, ibi_score)
     if base is None:
         return None
-    sf_score = _clamp_score(sf_score)
-    om_score = _clamp_score(om_score)
+    inputs = _blend_inputs(sf_score, om_score, ibi_score)
+    scores = [s for s, _ in inputs.values()]
     penalty = 0.0
-    if sf_score is not None and om_score is not None:
-        penalty = min(1.0, abs(sf_score - om_score) * 0.12)
+    if len(scores) >= 2:
+        # Max pairwise spread across available sources, scaled. Caps at 1.0.
+        spread = max(scores) - min(scores)
+        penalty = min(1.0, spread * 0.12)
     penalty += _to_float(extra_penalty) or 0.0
     return _clamp_score(base - penalty)
 
@@ -202,6 +231,35 @@ def _current_om_score(om_analysis, spot):
         return None
 
 
+def _is_ibi_available(ibi_analysis):
+    return isinstance(ibi_analysis, dict) and bool(ibi_analysis)
+
+
+def _current_ibi_score(ibi_analysis, spot):
+    """IBI lacks wind data, so _hour_score will fall back to the neutral wind
+    score (5.0). That's fine — IBI's contribution is wave/swell/direction."""
+    if not _is_ibi_available(ibi_analysis):
+        return None
+    current_like = {
+        "wave_height":      ibi_analysis.get("wave_height"),
+        "wave_period":      ibi_analysis.get("wave_period"),
+        "swell_height":     ibi_analysis.get("swell_height"),
+        "swell_period":     ibi_analysis.get("swell_period"),
+        "swell_direction":  ibi_analysis.get("swell_direction_deg"),
+        "wind_wave_height": ibi_analysis.get("wind_wave_height"),
+        "wind_speed":       None,
+        "wind_direction":   None,
+    }
+    try:
+        return _hour_score(
+            current_like,
+            spot.get("optimal_swell_bearing"),
+            spot.get("offshore_bearing"),
+        )
+    except Exception:
+        return None
+
+
 def _current_sf_score(sf_data):
     sf_data = sf_data or {}
     direct = _sf_quality_score(sf_data.get("rating"))
@@ -240,11 +298,13 @@ def _label_reason(label):
     return reasons.get(label, "Conditions have a hard stop right now.")
 
 
-def _hard_gate(sf_data, om_analysis):
+def _hard_gate(sf_data, om_analysis, ibi_analysis=None):
     sf_data = sf_data or {}
     om = om_analysis if isinstance(om_analysis, dict) else {}
+    ibi = ibi_analysis if isinstance(ibi_analysis, dict) else {}
     sf_reds = _red_detail_labels(sf_data.get("details"))
     om_reds = _red_detail_labels(om.get("om_details"))
+    ibi_reds = _red_detail_labels(ibi.get("ibi_details"))
 
     for label in sf_reds:
         if label in _SF_HARD_GATE_LABELS:
@@ -253,6 +313,10 @@ def _hard_gate(sf_data, om_analysis):
     for label in om_reds:
         if label in _OM_HARD_GATE_LABELS:
             return {"blocked": True, "reason": _label_reason(label), "source": f"om_{label.lower()}"}
+
+    for label in ibi_reds:
+        if label in _IBI_HARD_GATE_LABELS:
+            return {"blocked": True, "reason": _label_reason(label), "source": f"ibi_{label.lower()}"}
 
     sf = _normalize_verdict(sf_data.get("verdict"))
     om_verdict = _normalize_verdict(om.get("om_verdict"))
@@ -264,14 +328,17 @@ def _hard_gate(sf_data, om_analysis):
     return {"blocked": False, "reason": None, "source": None}
 
 
-def _direction_penalty(sf_data, om_analysis):
+def _direction_penalty(sf_data, om_analysis, ibi_analysis=None):
     sf_data = sf_data or {}
     om = om_analysis if isinstance(om_analysis, dict) else {}
+    ibi = ibi_analysis if isinstance(ibi_analysis, dict) else {}
     penalty = 0.0
     if "Direction" in _red_detail_labels(sf_data.get("details")):
         penalty += 0.9
     if "Direction" in _red_detail_labels(om.get("om_details")):
         penalty += 0.9
+    if "Direction" in _red_detail_labels(ibi.get("ibi_details")):
+        penalty += 0.6
     return min(1.5, penalty)
 
 
@@ -1167,19 +1234,29 @@ def _decision_reason(sf_data, om_analysis, hard_gate, score, best_window=None):
     return "Conditions are not lining up well enough right now."
 
 
-def unify(sf_data, om_analysis, om_hourly, spot, level):
+def unify(sf_data, om_analysis, om_hourly, spot, level, ibi_analysis=None, ipma_envelope=None):
     sf_data = sf_data or {}
     spot = spot or {}
     try:
         sf_score = _current_sf_score(sf_data)
         om_score = _current_om_score(om_analysis, spot)
-        hard_gate = _hard_gate(sf_data, om_analysis)
+        ibi_score = _current_ibi_score(ibi_analysis, spot)
+        hard_gate = _hard_gate(sf_data, om_analysis, ibi_analysis)
         score = _consensus_score(
             sf_score,
             om_score,
-            extra_penalty=_direction_penalty(sf_data, om_analysis),
+            ibi_score,
+            extra_penalty=_direction_penalty(sf_data, om_analysis, ibi_analysis),
         )
-        confidence = _confidence(sf_score, om_score)
+        confidence = _confidence(sf_score, om_score, ibi_score)
+
+        # IPMA envelope check is a sanity layer: never modifies score, but if
+        # the blended Hs/period sits outside Portugal's official daily range,
+        # drop the confidence one tier and flag it for the UI.
+        if isinstance(ipma_envelope, dict) and ipma_envelope.get("in_envelope") is False:
+            if confidence == "high":
+                confidence = "mixed"
+
         tier = _tier_for_score(score, hard_gate, has_om=om_score is not None)
         decision = _decision_for_tier(tier)
         windows = find_next_windows(
@@ -1197,6 +1274,8 @@ def unify(sf_data, om_analysis, om_hourly, spot, level):
             best_window=windows.get("best_window"),
         )
 
+        sources_used = sorted(_blend_inputs(sf_score, om_score, ibi_score).keys())
+
         return {
             "tier": tier,
             "decision": decision,
@@ -1213,6 +1292,14 @@ def unify(sf_data, om_analysis, om_hourly, spot, level):
             "confidence": confidence,
             "decision_reason": reason,
             "level": level,
+            "sources_used": sources_used,
+            "source_scores": {
+                "sf":  round(sf_score, 1)  if sf_score  is not None else None,
+                "om":  round(om_score, 1)  if om_score  is not None else None,
+                "ibi": round(ibi_score, 1) if ibi_score is not None else None,
+            },
+            "weights": {"sf": SF_WEIGHT, "om": OM_WEIGHT, "ibi": IBI_WEIGHT},
+            "ipma_sanity": ipma_envelope,
         }
     except Exception:
         return {
@@ -1231,4 +1318,8 @@ def unify(sf_data, om_analysis, om_hourly, spot, level):
             "confidence": "unknown",
             "decision_reason": "There is not enough clean data to make a confident call.",
             "level": level,
+            "sources_used": [],
+            "source_scores": {"sf": None, "om": None, "ibi": None},
+            "weights": {"sf": SF_WEIGHT, "om": OM_WEIGHT, "ibi": IBI_WEIGHT},
+            "ipma_sanity": ipma_envelope,
         }

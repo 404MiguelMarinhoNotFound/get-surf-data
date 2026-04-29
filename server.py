@@ -7,6 +7,7 @@ Stdlib only. Caches scraped data per-spot for 60s so spamming Sync
 doesn't hammer the upstream site.
 """
 import json
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -14,6 +15,8 @@ from pathlib import Path
 
 import scraper
 import explainer
+import open_meteo
+import open_meteo_explainer
 
 ROOT = Path(__file__).resolve().parent
 SPOTS = json.loads((ROOT / "spots.json").read_text(encoding="utf-8"))
@@ -41,16 +44,41 @@ def sync_spot(spot_id, level=explainer.DEFAULT_LEVEL):
     if cached and (time.time() - cached[0]) < CACHE_TTL:
         return cached[1]
 
-    try:
-        data = scraper.scrape(spot["url"], tz_name=spot.get("tz"))
-    except Exception as e:
+    sf_result, om_result = [None], [None]
+    sf_error, om_error = [None], [None]
+
+    def fetch_sf():
+        try:
+            sf_result[0] = scraper.scrape(spot["url"], tz_name=spot.get("tz"))
+        except Exception as e:
+            sf_error[0] = str(e)
+
+    def fetch_om():
+        lat, lon = spot.get("lat"), spot.get("lon")
+        if lat is None or lon is None:
+            om_error[0] = "No lat/lon configured for spot"
+            return
+        try:
+            om_result[0] = open_meteo.fetch(lat, lon)
+        except Exception as e:
+            om_error[0] = str(e)
+
+    t_sf = threading.Thread(target=fetch_sf)
+    t_om = threading.Thread(target=fetch_om)
+    t_sf.start()
+    t_om.start()
+    t_sf.join(timeout=25)
+    t_om.join(timeout=15)
+
+    if sf_error[0] or sf_result[0] is None:
         return {
-            "error": f"Couldn't fetch forecast: {e}",
+            "error": f"Couldn't fetch forecast: {sf_error[0]}",
             "spot_id": spot["id"],
             "spot_name": spot["name"],
             "url": spot["url"],
         }
 
+    data = sf_result[0]
     data["spot_id"] = spot["id"]
     data["spot_name"] = spot["name"]
     data.update(explainer.verdict(data, level, spot))
@@ -60,6 +88,21 @@ def sync_spot(spot_id, level=explainer.DEFAULT_LEVEL):
         slot_data = {"height_m": slot.get("height_m"), "period_s": slot.get("period_s")}
         v = explainer.verdict(slot_data, level)
         slot["verdict"] = v["verdict"]
+
+    # Merge Open-Meteo analysis.
+    if om_result[0] and not om_error[0]:
+        om = om_result[0]
+        data["om_analysis"] = open_meteo_explainer.interpret_all(
+            current=om.get("current"),
+            today_hours=om.get("today_hours", []),
+            sf_height_m=data.get("height_m"),
+            optimal_bearing=spot.get("optimal_swell_bearing"),
+            offshore_bearing=spot.get("offshore_bearing"),
+        )
+        data["om_error"] = None
+    else:
+        data["om_analysis"] = None
+        data["om_error"] = om_error[0] or "Open-Meteo fetch failed"
 
     CACHE[cache_key] = (time.time(), data)
     return data

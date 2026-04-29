@@ -661,6 +661,53 @@
   @media (min-width: 601px) and (max-width: 900px) {
     .cards { grid-template-columns: repeat(2, 1fr); }
   }
+
+  /* Open-Meteo swell analysis panel */
+  .om-panel {
+    background: rgba(2, 6, 23, 0.32);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-inner);
+    padding: 0.85rem 1rem;
+    margin-bottom: 1.1rem;
+    font-size: 0.78rem;
+  }
+  .om-panel h3 {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--text-dim); margin-bottom: 0.65rem; font-weight: 600;
+  }
+  .om-badges {
+    display: flex; flex-wrap: wrap; gap: 0.45rem; margin-bottom: 0.6rem;
+  }
+  .om-badge {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    padding: 0.28rem 0.65rem; border-radius: 20px;
+    font-size: 0.73rem; font-weight: 600; border: 1px solid transparent;
+    font-family: 'Inter', sans-serif;
+  }
+  .om-badge.green  { background: rgba(16,185,129,0.14); border-color: rgba(16,185,129,0.35); color: var(--green-bright, #34d399); }
+  .om-badge.yellow { background: rgba(251,191,36,0.14); border-color: rgba(251,191,36,0.35); color: var(--yellow-bright, #fbbf24); }
+  .om-badge.red    { background: rgba(248,113,113,0.12); border-color: rgba(248,113,113,0.3); color: var(--red-bright, #f87171); }
+  .om-badge.unknown { background: rgba(100,116,139,0.12); border-color: rgba(148,163,184,0.2); color: var(--text-faint, #64748b); }
+  .om-numbers {
+    display: grid; grid-template-columns: auto 1fr auto;
+    gap: 0.35rem 0.75rem; margin-bottom: 0.5rem; align-items: center;
+  }
+  .om-numbers .param-label { font-size: 0.73rem; }
+  .om-numbers .param-value { font-size: 0.8rem; }
+  .om-best-window {
+    margin-top: 0.55rem; padding: 0.4rem 0.7rem;
+    background: rgba(34, 211, 238, 0.08);
+    border: 1px solid rgba(34, 211, 238, 0.2);
+    border-radius: 8px; color: var(--cyan, #22d3ee);
+    font-size: 0.78rem; font-weight: 500;
+  }
+  .om-confidence {
+    margin-top: 0.5rem; font-size: 0.72rem;
+    display: flex; align-items: center; gap: 0.45rem;
+    color: var(--text-faint, #64748b);
+  }
+  .om-confidence .om-badge { font-size: 0.68rem; padding: 0.18rem 0.5rem; }
 </style>
 </head>
 <body>
@@ -1214,6 +1261,53 @@ function bindForecastStripInteractions(card, data) {
   });
 }
 
+function renderOmPanel(data) {
+  const om = data.om_analysis;
+  if (!om && !data.om_error) return '';
+
+  if (data.om_error && !om) {
+    return `<div class="om-panel"><h3>Swell Analysis (Open-Meteo)</h3>
+      <span style="color:var(--text-faint,#64748b);font-size:0.78rem">Data unavailable: ${escapeHtml(data.om_error)}</span>
+    </div>`;
+  }
+
+  // Badges
+  const badges = [];
+  if (om.swell_quality)       badges.push(`<span class="om-badge ${escapeHtml(om.swell_quality.color)}">${escapeHtml(om.swell_quality.label)}</span>`);
+  if (om.swell_purity)        badges.push(`<span class="om-badge ${escapeHtml(om.swell_purity.color)}">${escapeHtml(om.swell_purity.label)}</span>`);
+  if (om.direction_precision) badges.push(`<span class="om-badge ${escapeHtml(om.direction_precision.color)}">${escapeHtml(om.direction_precision.label)}${om.direction_precision.diff_deg != null ? ' (' + om.direction_precision.diff_deg + '°)' : ''}</span>`);
+  if (om.secondary_swell && om.secondary_swell.flag)
+    badges.push(`<span class="om-badge ${escapeHtml(om.secondary_swell.color)}">${escapeHtml(om.secondary_swell.label)}</span>`);
+
+  // Numbers row
+  const nums = [];
+  if (om.swell_height != null)
+    nums.push(`<div class="param-label">Swell</div><div></div><div class="param-value">${om.swell_height}m @ ${fmt(om.swell_period, 's')}</div>`);
+  if (om.wind_assessment)
+    nums.push(`<div class="param-label">Wind</div><div></div><div class="param-value">${escapeHtml(om.wind_assessment.summary)}</div>`);
+  if (om.swell_energy != null)
+    nums.push(`<div class="param-label">Energy</div><div></div><div class="param-value muted">${om.swell_energy} m²·s</div>`);
+
+  // Best window
+  const bw = om.best_hourly_window;
+  const bwHtml = bw ? `<div class="om-best-window">Best window today: ${escapeHtml(bw.label)}</div>` : '';
+
+  // Confidence
+  const conf = om.data_confidence;
+  const confHtml = conf ? `<div class="om-confidence">
+    <span class="om-badge ${escapeHtml(conf.color)}">${escapeHtml(conf.label)}</span>
+    ${conf.divergence_pct != null ? `<span>${Math.round(conf.divergence_pct)}% model spread vs surf-forecast</span>` : ''}
+  </div>` : '';
+
+  return `<div class="om-panel">
+    <h3>Swell Analysis (Open-Meteo)</h3>
+    <div class="om-badges">${badges.join('')}</div>
+    ${nums.length ? `<div class="om-numbers">${nums.join('')}</div>` : ''}
+    ${bwHtml}
+    ${confHtml}
+  </div>`;
+}
+
 function renderCard(spot, data) {
   const card = document.getElementById('card-' + spot.id);
   if (!card) return;
@@ -1244,6 +1338,7 @@ function renderCard(spot, data) {
       <div class="param-label">Site rating</div><div></div>
       <div class="param-value muted">${escapeHtml(ratingDisplay)}</div>
     </div>
+    ${renderOmPanel(data)}
     ${renderForecastStrip(data)}
     <div class="explanations">
       <h3>Why?</h3>

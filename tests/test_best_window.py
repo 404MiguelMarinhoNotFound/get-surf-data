@@ -95,6 +95,29 @@ class ParseRatingTimelineTzTests(unittest.TestCase):
         self.assertIn("8/10", out["best_window"])
         self.assertIn("Wed", out["best_window"])
 
+    def test_current_partial_day_keeps_evening_slots_on_same_day(self):
+        grid = (
+            "Wed 29 Thursday 30 Friday 1 Sat 2 "
+            "10 AM 1 PM 4 PM 7 PM 10 PM "
+            "1 AM 4 AM 7 AM 10 AM 1 PM 4 PM 7 PM 10 PM "
+            "1 AM 4 AM 7 AM 10 AM 1 PM 4 PM 7 PM 10 PM "
+            "1 AM 4 AM 7 AM "
+            "Rating (10 max) "
+            "1 0 0 0 0 0 1 1 1 0 1 2 3 2 2 3 3 1 1 2 2 2 3 1"
+        )
+        now = datetime(2026, 4, 29, 17, 37, tzinfo=timezone.utc)
+
+        out = scraper.parse_rating_timeline(grid, now_utc=now, tz_name="Europe/Lisbon")
+        cells = out["labeled"]
+
+        self.assertEqual(len(cells), 24)
+        self.assertEqual((cells[3]["day"], cells[3]["time"], cells[3]["rating"]), ("Wed 29", "7PM", 0))
+        self.assertEqual(cells[3]["timestamp_utc"], "2026-04-29T18:00:00+00:00")
+        self.assertEqual((cells[4]["day"], cells[4]["time"], cells[4]["rating"]), ("Wed 29", "10PM", 0))
+        self.assertEqual(cells[4]["timestamp_utc"], "2026-04-29T21:00:00+00:00")
+        self.assertEqual((cells[5]["day"], cells[5]["time"], cells[5]["rating"]), ("Thu 30", "1AM", 0))
+        self.assertEqual(cells[5]["timestamp_utc"], "2026-04-30T00:00:00+00:00")
+
 
 if __name__ == "__main__":
     unittest.main()

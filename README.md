@@ -1,6 +1,6 @@
 # 🏄 Lineup
 
-Local web app that scrapes surf-forecast.com for Carcavelos and Costa da Caparica,
+Local web app that scrapes surf-forecast.com for Carcavelos and Costa da Caparica | Praia do CDS,
 extracts the key swell/wind parameters, and gives you a beginner-grade verdict
 (🟢 Go / 🟡 Maybe / 🔴 Skip) with plain-English explanations for each parameter.
 

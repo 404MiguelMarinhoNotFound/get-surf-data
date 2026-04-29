@@ -6,7 +6,7 @@
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/jpeg" href="/getlineup.jpg">
 <link rel="shortcut icon" href="/getlineup.jpg">
-<meta name="description" content="Lineup checks Carcavelos and Costa da Caparica surf windows with skill-aware go, maybe, and skip calls.">
+<meta name="description" content="Lineup checks Carcavelos and Costa da Caparica | Praia do CDS surf windows with skill-aware go, maybe, and skip calls.">
 <meta name="theme-color" content="#020617">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -865,6 +865,11 @@
     transition: color 0.18s ease, text-shadow 0.18s ease;
   }
 
+  .site-credit-link.is-pending {
+    opacity: 0;
+    pointer-events: none;
+  }
+
   .site-credit-link::before {
     content: "";
     position: absolute;
@@ -1125,7 +1130,7 @@
   <div class="cards" id="cards"></div>
   <div class="site-credit">
     <span class="site-credit-prefix">built by</span>
-    <a class="site-credit-link" href="https://mmarinhofs.com" target="_blank" rel="noopener">
+    <a class="site-credit-link is-pending" href="https://mmarinhofs.com" target="_blank" rel="noopener">
       <span class="site-credit-text">mmarinhofs.com</span>
     </a>
   </div>
@@ -1141,7 +1146,7 @@ const SPOTS = [
     url: 'https://www.surf-forecast.com/breaks/Carcavelos/forecasts/latest',
     webcamPageUrl: 'https://beachcam.meo.pt/livecams/praia-de-carcavelos/',
     webcamStreamUrl: 'https://video-auth1.iol.pt/beachcam/carcavelos/playlist.m3u8' },
-  { id: 'caparica',   name: 'Costa da Caparica',
+  { id: 'caparica',   name: 'Costa da Caparica | Praia do CDS',
     url: 'https://www.surf-forecast.com/breaks/Costada-Caparica/forecasts/latest',
     webcamPageUrl: 'https://beachcam.meo.pt/livecams/costa-da-caparica/',
     webcamStreamUrl: 'https://video-auth1.iol.pt/beachcam/costacaparicacds/playlist.m3u8' },
@@ -1763,14 +1768,14 @@ function renderOmPanel(data) {
 function hhmmFromIso(value) {
   if (!value) return '';
   const match = String(value).match(/T(\d{2}:\d{2})/);
-  if (match) return compactHeroWindowLabel(match[1]);
+  if (match) return heroClockLabel(match[1]);
   const dt = new Date(value);
   if (Number.isNaN(dt.getTime())) return '';
-  return compactHeroWindowLabel(dt.toISOString().slice(11, 16));
+  return heroClockLabel(dt.toISOString().slice(11, 16));
 }
 
-function compactHeroWindowLabel(label) {
-  return String(label || '').replace(/\b(\d{2}):00\b/g, '$1');
+function heroClockLabel(label) {
+  return String(label || '');
 }
 
 function heroScoreMeaning(score) {
@@ -1807,7 +1812,7 @@ function heroWindowParts(win) {
   const tier = ['gold', 'green', 'yellow', 'red'].includes(win.tier) ? win.tier : 'green';
   const scoreValue = Number(win.score);
   return {
-    label: compactHeroWindowLabel(win.label),
+    label: heroClockLabel(win.label),
     meta: away,
     score: Number.isFinite(scoreValue) ? `${scoreValue.toFixed(1)}/10` : '',
     scoreValue: Number.isFinite(scoreValue) ? scoreValue : null,
@@ -2007,9 +2012,12 @@ function initSiteCredit() {
   if (!link) return;
 
   const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const initialDelayMs = 1500;
   let replayTimer = null;
+  let initialTimer = null;
 
   const playTypewriter = () => {
+    link.classList.remove('is-pending');
     if (motionQuery.matches) {
       link.classList.remove('is-typing');
       return;
@@ -2026,10 +2034,14 @@ function initSiteCredit() {
     }
   };
 
-  playTypewriter();
+  initialTimer = window.setTimeout(playTypewriter, initialDelayMs);
   scheduleReplay();
 
   const onMotionChange = () => {
+    if (initialTimer) {
+      window.clearTimeout(initialTimer);
+      initialTimer = null;
+    }
     playTypewriter();
     scheduleReplay();
   };

@@ -1,6 +1,6 @@
 # Lineup — surf forecast app
 
-A personal surf conditions tool for Carcavelos and Costa da Caparica (Lisbon area). Scrapes surf-forecast.com, runs a skill-aware rules engine, and serves a dark-mode single-page frontend. No external dependencies — stdlib Python only.
+A personal surf conditions tool for Carcavelos and Costa da Caparica | Praia do CDS (Lisbon area). Scrapes surf-forecast.com, runs a skill-aware rules engine, and serves a dark-mode single-page frontend. No external dependencies — stdlib Python only.
 
 ## Live deployment
 

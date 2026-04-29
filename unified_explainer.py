@@ -4,6 +4,11 @@ Pure merger helpers: no network, no filesystem, no UI concerns.
 """
 from datetime import datetime, timedelta, timezone
 
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover
+    ZoneInfo = None
+
 from open_meteo_explainer import _bearing_diff, _hour_score
 
 
@@ -28,6 +33,43 @@ SCORE_BEST_WINDOW = 5.0
 
 _SF_HARD_GATE_LABELS = {"Height", "Period", "Tide"}
 _OM_HARD_GATE_LABELS = {"Wind", "Shape"}
+
+_SF_QUALITY_CURVE = {
+    0: 0.0,
+    1: 2.0,
+    2: 3.5,
+    3: 4.8,
+    4: 5.8,
+    5: 6.8,
+    6: 7.6,
+    7: 8.4,
+    8: 9.0,
+    9: 9.5,
+    10: 10.0,
+}
+
+
+def _last_sunday(year, month):
+    day = datetime(year, month, 28)
+    while day.weekday() != 6:
+        day += timedelta(days=1)
+    while (day + timedelta(days=7)).month == month:
+        day += timedelta(days=7)
+    return day
+
+
+def _eu_western_offset(dt_utc):
+    year = dt_utc.year
+    start = datetime(year, 3, _last_sunday(year, 3).day, 1, tzinfo=timezone.utc)
+    end = datetime(year, 10, _last_sunday(year, 10).day, 1, tzinfo=timezone.utc)
+    return timedelta(hours=1 if start <= dt_utc < end else 0)
+
+
+_FALLBACK_TZ_RULES = {
+    "Europe/Lisbon": _eu_western_offset,
+    "Europe/London": _eu_western_offset,
+    "Atlantic/Faroe": _eu_western_offset,
+}
 
 
 def _to_float(value):
@@ -61,19 +103,14 @@ def _sf_quality_score(rating):
     rating = _to_float(rating)
     if rating is None:
         return None
-    if rating <= 0:
-        return 0.0
-    if rating < 2:
-        return 3.0
-    if rating < 3:
-        return 5.5
-    if rating < 4:
-        return 7.5
-    if rating < 5:
-        return 8.6
-    if rating < 6:
-        return 9.2
-    return 10.0
+    rating = max(0.0, min(10.0, rating))
+    lower = int(rating)
+    upper = min(10, lower + 1)
+    if lower == upper or rating == lower:
+        return _SF_QUALITY_CURVE[lower]
+    lower_score = _SF_QUALITY_CURVE[lower]
+    upper_score = _SF_QUALITY_CURVE[upper]
+    return lower_score + (upper_score - lower_score) * (rating - lower)
 
 
 def _weighted_harmonic(sf_score, om_score, sf_weight=SF_WEIGHT, om_weight=OM_WEIGHT):
@@ -254,6 +291,116 @@ def _om_hour_hard_gate(row, spot):
             return {"blocked": True, "reason": _label_reason("Wind"), "source": "om_wind"}
 
     return {"blocked": False, "reason": None, "source": None}
+
+
+def _tide_state_at(dt, tide_events):
+    if not dt or not tide_events:
+        return None
+
+    parsed = []
+    for event in tide_events:
+        event_dt = _parse_dt(event.get("time"))
+        height = _to_float(event.get("height_m"))
+        kind = event.get("type")
+        if event_dt is None or height is None or kind not in ("high", "low"):
+            continue
+        parsed.append((event_dt, kind, height))
+
+    parsed.sort(key=lambda item: item[0])
+    if len(parsed) < 2:
+        return None
+
+    previous_event = None
+    next_event = None
+    for event in parsed:
+        if event[0] <= dt:
+            previous_event = event
+        elif next_event is None:
+            next_event = event
+            break
+
+    if previous_event is None or next_event is None:
+        return None
+
+    prev_dt, _prev_kind, prev_h = previous_event
+    next_dt, next_kind, next_h = next_event
+    total_seconds = max(1.0, (next_dt - prev_dt).total_seconds())
+    elapsed_seconds = min(max(0.0, (dt - prev_dt).total_seconds()), total_seconds)
+    progress = elapsed_seconds / total_seconds
+    height_m = prev_h + (next_h - prev_h) * progress
+    state = "rising" if next_h > prev_h else "falling"
+    low_h = min(prev_h, next_h)
+    high_h = max(prev_h, next_h)
+    tide_range = high_h - low_h
+    position = 0.5 if tide_range <= 0 else (height_m - low_h) / tide_range
+
+    return {
+        "height_m": round(height_m, 2),
+        "state": state,
+        "position": round(position, 2),
+        "next_type": next_kind,
+        "minutes_to_next_turn": int(round((next_dt - dt).total_seconds() / 60)),
+    }
+
+
+def _tide_window_effect(dt, tide_events, spot):
+    tide = _tide_state_at(dt, tide_events)
+    window = str((spot or {}).get("tide_window") or "").lower()
+    neutral = {
+        "color": None,
+        "penalty": 0.0,
+        "gate": {"blocked": False, "reason": None, "source": None},
+        "tide": tide,
+    }
+
+    if not tide or not window or window in ("any", "all"):
+        return neutral
+
+    state = tide.get("state")
+    position = tide.get("position")
+    next_type = tide.get("next_type")
+    minutes = tide.get("minutes_to_next_turn")
+    color = None
+
+    if position is None or state not in ("rising", "falling"):
+        return neutral
+
+    if window == "mid-to-high":
+        if state == "rising" and 0.35 <= position <= 0.90:
+            color = "green"
+        elif state == "rising" and position < 0.35:
+            color = "yellow" if next_type == "high" and minutes is not None and minutes <= 90 else "red"
+        elif state == "falling" and position >= 0.55:
+            color = "yellow"
+        elif position > 0.90:
+            color = "yellow"
+        else:
+            color = "red"
+    elif window == "low-to-mid":
+        if position <= 0.60:
+            color = "green"
+        elif position <= 0.80:
+            color = "yellow"
+        else:
+            color = "red"
+    else:
+        return neutral
+
+    if color == "red":
+        return {
+            "color": color,
+            "penalty": 0.0,
+            "gate": {"blocked": True, "reason": _label_reason("Tide"), "source": "sf_tide"},
+            "tide": tide,
+        }
+    if color == "yellow":
+        return {
+            "color": color,
+            "penalty": 0.6,
+            "gate": {"blocked": False, "reason": None, "source": "sf_tide"},
+            "tide": tide,
+        }
+    return {**neutral, "color": color}
 
 
 def _resolve_decision(sf_verdict, om_verdict):
@@ -626,7 +773,7 @@ def _score_om_hour(row, spot):
         return None
 
 
-def _score_hour(hour_dt, sf_cells, om_by_hour, spot):
+def _score_hour(hour_dt, sf_cells, om_by_hour, spot, tide_events=None, require_sf=False):
     sf_raw = _nearest_sf_rating(hour_dt, sf_cells)
     sf_score = _sf_quality_score(sf_raw)
     om_row = om_by_hour.get(_hour_key(hour_dt))
@@ -634,7 +781,26 @@ def _score_hour(hour_dt, sf_cells, om_by_hour, spot):
     if sf_score is None and om_score is None:
         return None
     hard_gate = _om_hour_hard_gate(om_row, spot)
-    decider_score = _consensus_score(sf_score, om_score)
+    tide_effect = _tide_window_effect(hour_dt, tide_events, spot)
+    tide_gate = tide_effect.get("gate") or {}
+    blocked_by = []
+    if hard_gate.get("blocked"):
+        blocked_by.append(hard_gate.get("source") or "om_gate")
+    if tide_gate.get("blocked"):
+        blocked_by.append(tide_gate.get("source") or "sf_tide")
+        if not hard_gate.get("blocked"):
+            hard_gate = tide_gate
+    if require_sf and sf_score is None:
+        blocked_by.append("sf_gap")
+    if om_row is not None and om_score is None:
+        blocked_by.append("om_gap")
+
+    decider_score = _consensus_score(
+        sf_score,
+        om_score,
+        extra_penalty=tide_effect.get("penalty", 0.0),
+    )
+    window_eligible = not (require_sf and sf_score is None) and not (om_row is not None and om_score is None)
     tier = _tier_for_score(decider_score, hard_gate, has_om=om_score is not None)
     return {
         "dt": hour_dt,
@@ -647,40 +813,67 @@ def _score_hour(hour_dt, sf_cells, om_by_hour, spot):
         "tier": tier,
         "has_hard_gate": bool(hard_gate.get("blocked")),
         "hard_gate": hard_gate,
+        "blocked_by": blocked_by,
         "confidence": _confidence(sf_score, om_score),
+        "tide": {
+            "color": tide_effect.get("color"),
+            **(tide_effect.get("tide") or {}),
+        },
+        "window_eligible": window_eligible,
         "step_hours": 1,
     }
 
 
-def _score_sf_cell(cell):
+def _score_sf_cell(cell, tide_events=None, spot=None):
     sf_score = _sf_quality_score(cell["rating"])
+    tide_effect = _tide_window_effect(cell["dt"], tide_events, spot)
+    hard_gate = tide_effect.get("gate") or {"blocked": False, "reason": None, "source": None}
+    score = _consensus_score(sf_score, None, extra_penalty=tide_effect.get("penalty", 0.0))
+    blocked_by = []
+    if hard_gate.get("blocked"):
+        blocked_by.append(hard_gate.get("source") or "sf_tide")
     return {
         "dt": cell["dt"],
         "sf_raw_rating": cell["rating"],
         "sf_score": sf_score,
         "om_score": None,
         "om_row": None,
-        "decider_score": sf_score,
-        "combined": sf_score,
-        "tier": _tier_for_score(sf_score, has_om=False),
-        "has_hard_gate": False,
-        "hard_gate": {"blocked": False, "reason": None, "source": None},
+        "decider_score": score,
+        "combined": score,
+        "tier": _tier_for_score(score, hard_gate=hard_gate, has_om=False),
+        "has_hard_gate": bool(hard_gate.get("blocked")),
+        "hard_gate": hard_gate,
+        "blocked_by": blocked_by,
         "confidence": "sf_only",
+        "tide": {
+            "color": tide_effect.get("color"),
+            **(tide_effect.get("tide") or {}),
+        },
+        "window_eligible": True,
         "step_hours": 3,
     }
 
 
 def _hour_is_gold(row):
-    return row.get("tier") == TIER_GOLD and not row.get("has_hard_gate")
+    return (
+        row.get("tier") == TIER_GOLD
+        and not row.get("has_hard_gate")
+        and row.get("window_eligible", True)
+    )
 
 
 def _hour_is_green(row):
-    return row.get("tier") in (TIER_GOLD, TIER_GREEN) and not row.get("has_hard_gate")
+    return (
+        row.get("tier") in (TIER_GOLD, TIER_GREEN)
+        and not row.get("has_hard_gate")
+        and row.get("window_eligible", True)
+    )
 
 
 def _hour_is_decent(row):
     return (
         not row.get("has_hard_gate")
+        and row.get("window_eligible", True)
         and row.get("decider_score") is not None
         and row.get("decider_score") >= SCORE_BEST_WINDOW
     )
@@ -702,22 +895,60 @@ def _block_duration_hours(block):
     return int((block[-1]["dt"] + timedelta(hours=block[-1].get("step_hours", 1)) - block[0]["dt"]).total_seconds() / 3600)
 
 
-def _find_first_block(scored_hours, predicate, min_hours=2):
-    block = []
+def _harmonic_mean(values):
+    scores = [_to_float(value) for value in values]
+    if not scores or any(score is None for score in scores):
+        return None
+    if any(score <= 0 for score in scores):
+        return 0.0
+    return len(scores) / sum(1.0 / score for score in scores)
+
+
+def _session_candidates(scored_hours, predicate, min_hours=2, max_hours=4):
+    candidates = []
+    run = []
+
+    def flush_run(rows):
+        for start_idx in range(len(rows)):
+            block = []
+            for row in rows[start_idx:]:
+                if block and not _continuous(block[-1], row):
+                    break
+                block.append(row)
+                duration = _block_duration_hours(block)
+                if duration > max_hours:
+                    break
+                if duration >= min_hours:
+                    score = _harmonic_mean(row["decider_score"] for row in block)
+                    if score is not None:
+                        candidates.append({"block": list(block), "score": score})
+
     for row in scored_hours:
         if predicate(row):
-            if block and not _continuous(block[-1], row):
-                if _block_duration_hours(block) >= min_hours:
-                    return block
-                block = []
-            block.append(row)
+            if run and not _continuous(run[-1], row):
+                flush_run(run)
+                run = []
+            run.append(row)
         else:
-            if _block_duration_hours(block) >= min_hours:
-                return block
-            block = []
-    if _block_duration_hours(block) >= min_hours:
-        return block
-    return None
+            flush_run(run)
+            run = []
+
+    flush_run(run)
+    return candidates
+
+
+def _best_session(scored_hours, predicate, min_hours=2, max_hours=4):
+    candidates = _session_candidates(scored_hours, predicate, min_hours, max_hours)
+    if not candidates:
+        return None
+    candidates.sort(
+        key=lambda item: (
+            -item["score"],
+            item["block"][0]["dt"],
+            -_block_duration_hours(item["block"]),
+        )
+    )
+    return candidates[0]["block"]
 
 
 def _count_blocks(scored_hours, predicate, min_hours=2):
@@ -739,14 +970,70 @@ def _count_blocks(scored_hours, predicate, min_hours=2):
     return count
 
 
-def _label_window(start_dt, end_dt, now_dt):
-    if start_dt.date() == now_dt.date():
+def _spot_tzinfo(spot, dt=None):
+    tz_name = (spot or {}).get("tz")
+    if tz_name and ZoneInfo is not None:
+        try:
+            return ZoneInfo(tz_name)
+        except Exception:
+            pass
+    rule = _FALLBACK_TZ_RULES.get(tz_name)
+    if rule is not None:
+        dt_utc = dt or datetime.now(timezone.utc)
+        if dt_utc.tzinfo is None:
+            dt_utc = dt_utc.replace(tzinfo=timezone.utc)
+        else:
+            dt_utc = dt_utc.astimezone(timezone.utc)
+        return timezone(rule(dt_utc), tz_name)
+    return timezone.utc
+
+
+def _local_dt(dt, spot):
+    return dt.astimezone(_spot_tzinfo(spot, dt))
+
+
+def _label_window(start_dt, end_dt, now_dt, spot=None):
+    start_local = _local_dt(start_dt, spot)
+    end_local = _local_dt(end_dt, spot)
+    now_local = _local_dt(now_dt, spot)
+    if start_local.date() == now_local.date():
         prefix = "Today"
-    elif start_dt.date() == (now_dt + timedelta(days=1)).date():
+    elif start_local.date() == (now_local + timedelta(days=1)).date():
         prefix = "Tomorrow"
     else:
-        prefix = start_dt.strftime("%A")
-    return f"{prefix} {start_dt.strftime('%H:%M')}-{end_dt.strftime('%H:%M')}"
+        prefix = start_local.strftime("%A")
+    end_label = end_local.strftime("%H:%M")
+    if end_local.date() != start_local.date():
+        end_label = end_local.strftime("%a %H:%M")
+    return f"{prefix} {start_local.strftime('%H:%M')}-{end_label}"
+
+
+def _window_confidence(block):
+    values = {row.get("confidence") for row in block if row.get("confidence")}
+    if not values:
+        return "unknown"
+    if values == {"high"}:
+        return "high"
+    if "mixed" in values:
+        return "mixed"
+    if len(values) == 1:
+        return next(iter(values))
+    return "mixed"
+
+
+def _score_components(block):
+    components = []
+    for row in block:
+        tide = row.get("tide") or {}
+        components.append({
+            "starts_at": _iso(row.get("dt")),
+            "score": round(row["decider_score"], 1) if row.get("decider_score") is not None else None,
+            "sf_raw_rating": row.get("sf_raw_rating"),
+            "sf_score": round(row["sf_score"], 1) if row.get("sf_score") is not None else None,
+            "om_score": round(row["om_score"], 1) if row.get("om_score") is not None else None,
+            "tide": tide.get("color"),
+        })
+    return components
 
 
 def _window_payload(block, now_dt, spot):
@@ -754,16 +1041,20 @@ def _window_payload(block, now_dt, spot):
         return None
     start = block[0]["dt"]
     end = block[-1]["dt"] + timedelta(hours=block[-1].get("step_hours", 1))
-    avg = sum(row["decider_score"] for row in block) / len(block)
+    score = _harmonic_mean(row["decider_score"] for row in block)
     hours_away = max(0, round((start - now_dt).total_seconds() / 3600))
+    blocked_by = sorted({item for row in block for item in row.get("blocked_by", []) if item})
     return {
         "starts_at": _iso(start),
         "ends_at": _iso(end),
-        "label": _label_window(start, end, now_dt),
+        "label": _label_window(start, end, now_dt, spot),
         "hours_away": hours_away,
-        "score": round(avg, 1),
-        "tier": block[0].get("tier"),
+        "score": round(score, 1) if score is not None else None,
+        "tier": _tier_for_score(score, has_om=any(row.get("om_score") is not None for row in block)),
         "reason": _window_reason(block, spot),
+        "confidence": _window_confidence(block),
+        "score_components": _score_components(block),
+        "blocked_by": blocked_by,
     }
 
 
@@ -799,21 +1090,30 @@ def _now_tier(scored_hours, now_dt):
     return TIER_YELLOW
 
 
-def find_next_windows(rating_timeline, om_hourly, spot, sf_now_utc):
+def find_next_windows(rating_timeline, om_hourly, spot, sf_now_utc, tide=None):
     now_dt = _parse_dt(sf_now_utc) or datetime.now(timezone.utc)
     cutoff = now_dt + timedelta(days=7)
     spot = spot or {}
     sf_cells = _sf_cells(rating_timeline)
     om_hours = _om_by_hour(om_hourly)
+    tide_events = tide.get("events") if isinstance(tide, dict) else tide
 
     scored = []
     if om_hours:
+        require_sf = bool(sf_cells)
         for hour_dt in sorted(om_hours):
             if hour_dt < now_dt.replace(minute=0, second=0, microsecond=0):
                 continue
             if hour_dt > cutoff:
                 continue
-            row = _score_hour(hour_dt, sf_cells, om_hours, spot)
+            row = _score_hour(
+                hour_dt,
+                sf_cells,
+                om_hours,
+                spot,
+                tide_events=tide_events,
+                require_sf=require_sf,
+            )
             if row is not None:
                 scored.append(row)
     elif sf_cells:
@@ -823,7 +1123,7 @@ def find_next_windows(rating_timeline, om_hourly, spot, sf_now_utc):
                 continue
             if cell["dt"] > cutoff:
                 continue
-            scored.append(_score_sf_cell(cell))
+            scored.append(_score_sf_cell(cell, tide_events=tide_events, spot=spot))
 
     scored.sort(key=lambda row: row["dt"])
     if not scored:
@@ -836,8 +1136,8 @@ def find_next_windows(rating_timeline, om_hourly, spot, sf_now_utc):
             "current_window_ends": None,
         }
 
-    best_block = _find_first_block(scored, _hour_is_decent, min_hours=2)
-    gold_block = _find_first_block(scored, _hour_is_gold, min_hours=2)
+    best_block = _best_session(scored, _hour_is_decent, min_hours=2, max_hours=4)
+    gold_block = _best_session(scored, _hour_is_gold, min_hours=2, max_hours=4)
     best_window = _window_payload(best_block, now_dt, spot)
 
     return {
@@ -887,6 +1187,7 @@ def unify(sf_data, om_analysis, om_hourly, spot, level):
             om_hourly or [],
             spot,
             sf_data.get("now_utc") or sf_data.get("fetched_at"),
+            tide=sf_data.get("tide"),
         )
         reason = _decision_reason(
             sf_data,

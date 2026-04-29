@@ -170,6 +170,28 @@ def _tod_label(hour24):
     return "evening"
 
 
+def _slot_counts_by_day(times, day_count, n_slots):
+    """Group a Surf-Forecast time row into days by detecting midnight rollover."""
+    counts = []
+    current = 0
+    previous_hour = None
+
+    for h_str, mer in times[:n_slots]:
+        hour = _hour24_from_label(f"{h_str}{mer.upper()}")
+        if previous_hour is not None and hour < previous_hour:
+            counts.append(current)
+            current = 0
+        current += 1
+        previous_hour = hour
+
+    if current:
+        counts.append(current)
+
+    if len(counts) > day_count > 0:
+        return counts[:day_count - 1] + [sum(counts[day_count - 1:])]
+    return counts
+
+
 def _last_sunday(year, month):
     d = datetime(year, month, 28)
     while d.weekday() != 6:
@@ -240,14 +262,7 @@ def parse_rating_timeline(text, now_utc=None, tz_name=None):
     ratings = list(map(int, m.group(3).split()))
 
     n_slots = min(len(times), len(ratings))
-    # First day is partial (remaining afternoon/evening); full days have ~8 slots each.
-    slots_per_day, remaining = [], n_slots
-    for i, _ in enumerate(days):
-        n = min(3 if i == 0 else 8, remaining)
-        slots_per_day.append(n)
-        remaining -= n
-        if remaining <= 0:
-            break
+    slots_per_day = _slot_counts_by_day(times, len(days), n_slots)
 
     spot_tz = _spot_tz(tz_name, now_utc=now_utc)
     base_local_date = None

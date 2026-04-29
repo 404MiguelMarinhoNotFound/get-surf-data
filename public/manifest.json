@@ -1,7 +1,7 @@
 {
   "name": "Lineup - Surf Forecast",
   "short_name": "Lineup",
-  "description": "Skill-aware surf conditions for Carcavelos and Costa da Caparica",
+  "description": "Skill-aware surf conditions for Carcavelos and Costa da Caparica | Praia do CDS",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

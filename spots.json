@@ -10,8 +10,7 @@
     "optimal_swell_bearing": 260,
     "optimal_swell_label": "W-SW",
     "webcam_url": "https://beachcam.meo.pt/livecams/praia-de-carcavelos/",
-    "tide_window": "mid-to-high",
-    "ipma_local_id": 1111026
+    "tide_window": "mid-to-high"
   },
   {
     "id": "caparica",
@@ -24,7 +23,6 @@
     "optimal_swell_bearing": 250,
     "optimal_swell_label": "WSW-SW",
     "webcam_url": "https://beachcam.meo.pt/livecams/costa-da-caparica/",
-    "tide_window": "mid-to-high",
-    "ipma_local_id": 1151200
+    "tide_window": "mid-to-high"
   }
 ]

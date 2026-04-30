@@ -1820,24 +1820,52 @@ function renderIbiPanel(data) {
   </div>`;
 }
 
+function renderGfsPanel(data) {
+  const gfs = data.gfs_analysis;
+  if (!gfs && !data.gfs_error) return '';
+
+  if (data.gfs_error && !gfs) {
+    return `<div class="om-panel"><h3>Marine Analysis <span class="om-source-label">NOAA GFS</span></h3>
+      <span style="color:var(--text-faint,#64748b);font-size:0.78rem">Data unavailable: ${escapeHtml(data.gfs_error)}</span>
+    </div>`;
+  }
+
+  const vc = gfs.gfs_verdict || 'empty';
+  const vtIcons = { go: '&#9711;', maybe: '&#9651;', skip: '&#9632;', empty: '' };
+  const vtIcon = vtIcons[vc] || '';
+  const vtText = gfs.gfs_verdict_text || '';
+  const vtDisplay = vtText.replace(' (NOAA GFS)', '');
+  const verdictHtml = vtText
+    ? `<div class="om-verdict ${vc}">${vtIcon} ${escapeHtml(vtDisplay)}</div>`
+    : '';
+
+  const details = gfs.gfs_details || [];
+  const detailsHtml = details.length
+    ? `<ul class="om-details">
+        ${details.map(d => `<li class="${escapeHtml(d.color)}">
+          <span><strong>${escapeHtml(d.label)}:</strong> ${escapeHtml(d.explanation)}</span>
+        </li>`).join('')}
+      </ul>`
+    : '';
+
+  return `<div class="om-panel">
+    <h3>Marine Analysis <span class="om-source-label">NOAA GFS</span></h3>
+    ${verdictHtml}
+    ${detailsHtml}
+  </div>`;
+}
+
 function renderSourcesLine(data) {
   const u = data.unified;
   if (!u || !u.source_scores) return '';
   const s = u.source_scores;
   const w = u.weights || {};
-  const labels = {sf: 'Surf-Forecast', om: 'Open-Meteo', ibi: 'Copernicus IBI'};
-  const parts = ['sf', 'om', 'ibi']
+  const labels = {sf: 'Surf-Forecast', om: 'Open-Meteo', gfs: 'NOAA GFS', ibi: 'Copernicus IBI'};
+  const parts = ['sf', 'om', 'gfs', 'ibi']
     .filter(k => s[k] != null)
-    .map(k => `<span class="source-chip"><strong>${escapeHtml(labels[k])}</strong> ${s[k]}/10 <em>w=${(w[k]*100).toFixed(0)}%</em></span>`);
+    .map(k => `<span class="source-chip"><strong>${escapeHtml(labels[k])}</strong> ${s[k]}/10 <em>w=${(((w[k] || 0)*100)).toFixed(0)}%</em></span>`);
   if (!parts.length) return '';
-  const ipma = u.ipma_sanity;
-  let envelopeBadge = '';
-  if (ipma && ipma.in_envelope === false) {
-    envelopeBadge = `<span class="source-chip envelope-warn" title="Blended values outside IPMA daily range">&#9888; outside IPMA range</span>`;
-  } else if (ipma && ipma.in_envelope === true) {
-    envelopeBadge = `<span class="source-chip envelope-ok" title="Inside IPMA daily envelope">&#10003; IPMA confirmed</span>`;
-  }
-  return `<div class="sources-line">${parts.join(' ')}${envelopeBadge}</div>`;
+  return `<div class="sources-line">${parts.join(' ')}</div>`;
 }
 
 function hhmmFromIso(value) {
@@ -2022,6 +2050,7 @@ function renderCard(spot, data) {
       </div>
       ${renderSourcesLine(data)}
       ${renderOmPanel(data)}
+      ${renderGfsPanel(data)}
       ${renderIbiPanel(data)}
       ${renderForecastStrip(data)}
       <div class="explanations">

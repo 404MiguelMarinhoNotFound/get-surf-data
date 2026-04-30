@@ -13,7 +13,8 @@ import open_meteo_explainer
 import unified_explainer
 import copernicus_ibi
 import copernicus_ibi_explainer
-import ipma
+import noaa_gfs
+import noaa_gfs_explainer
 
 ROOT = Path(__file__).resolve().parent.parent
 SPOTS = json.loads((ROOT / "spots.json").read_text(encoding="utf-8"))
@@ -31,8 +32,8 @@ def _sync_spot(spot_id, level=explainer.DEFAULT_LEVEL):
     if level not in explainer.VALID_LEVELS:
         level = explainer.DEFAULT_LEVEL
 
-    sf_result, om_result, ibi_result, ipma_result = [None], [None], [None], [None]
-    sf_error, om_error, ibi_error, ipma_error = [None], [None], [None], [None]
+    sf_result, om_result, gfs_result, ibi_result = [None], [None], [None], [None]
+    sf_error, om_error, gfs_error, ibi_error = [None], [None], [None], [None]
 
     def fetch_sf():
         try:
@@ -62,28 +63,28 @@ def _sync_spot(spot_id, level=explainer.DEFAULT_LEVEL):
         except Exception as e:
             ibi_error[0] = str(e)
 
-    def fetch_ipma():
-        local_id = spot.get("ipma_local_id")
-        if not local_id:
-            ipma_error[0] = "No ipma_local_id configured for spot"
+    def fetch_gfs():
+        lat, lon = spot.get("lat"), spot.get("lon")
+        if lat is None or lon is None:
+            gfs_error[0] = "No lat/lon configured for spot"
             return
         try:
-            ipma_result[0] = ipma.fetch(local_id)
+            gfs_result[0] = noaa_gfs.fetch(lat, lon)
         except Exception as e:
-            ipma_error[0] = str(e)
+            gfs_error[0] = str(e)
 
     threads = [
         threading.Thread(target=fetch_sf),
         threading.Thread(target=fetch_om),
+        threading.Thread(target=fetch_gfs),
         threading.Thread(target=fetch_ibi),
-        threading.Thread(target=fetch_ipma),
     ]
     for t in threads:
         t.start()
     threads[0].join(timeout=25)
     threads[1].join(timeout=15)
     threads[2].join(timeout=15)
-    threads[3].join(timeout=8)
+    threads[3].join(timeout=15)
 
     if sf_error[0] or sf_result[0] is None:
         return {
@@ -123,6 +124,23 @@ def _sync_spot(spot_id, level=explainer.DEFAULT_LEVEL):
 
     om_hourly = om_result[0].get("hourly", []) if om_result[0] else []
 
+    # Merge NOAA GFS analysis (independent wave + wind model).
+    if gfs_result[0] and not gfs_error[0]:
+        gfs = gfs_result[0]
+        data["gfs_analysis"] = noaa_gfs_explainer.interpret_all(
+            current=gfs.get("current"),
+            optimal_bearing=spot.get("optimal_swell_bearing"),
+            offshore_bearing=spot.get("offshore_bearing"),
+            optimal_label=spot.get("optimal_swell_label"),
+            level=level,
+        )
+        data["gfs_error"] = None
+    else:
+        data["gfs_analysis"] = None
+        data["gfs_error"] = gfs_error[0] or "NOAA GFS fetch failed"
+
+    gfs_hourly = gfs_result[0].get("hourly", []) if gfs_result[0] else []
+
     # Merge Copernicus IBI analysis (third weighted source).
     if ibi_result[0] and not ibi_error[0]:
         data["ibi_analysis"] = copernicus_ibi_explainer.interpret_all(
@@ -137,25 +155,6 @@ def _sync_spot(spot_id, level=explainer.DEFAULT_LEVEL):
         data["ibi_analysis"] = None
         data["ibi_error"] = ibi_error[0] or "Copernicus IBI fetch failed"
 
-    # IPMA daily envelope (sanity layer, not weighted).
-    ipma_envelope = None
-    if ipma_result[0] and not ipma_error[0]:
-        data["ipma_data"] = ipma_result[0]
-        # Use OM swell height as the canonical "blended" probe (highest hourly
-        # resolution); fall back to SF height if OM is missing.
-        om = data.get("om_analysis") or {}
-        probe_h = om.get("swell_height") or om.get("wave_height") or data.get("height_m")
-        probe_p = om.get("swell_period") or om.get("wave_period") or data.get("period_s")
-        ipma_envelope = ipma.envelope_check(
-            ipma_result[0].get("today"),
-            probe_h,
-            probe_p,
-        )
-        data["ipma_error"] = None
-    else:
-        data["ipma_data"] = None
-        data["ipma_error"] = ipma_error[0] or "IPMA fetch failed"
-
     data["unified"] = unified_explainer.unify(
         sf_data=data,
         om_analysis=data.get("om_analysis"),
@@ -163,7 +162,8 @@ def _sync_spot(spot_id, level=explainer.DEFAULT_LEVEL):
         spot=spot,
         level=level,
         ibi_analysis=data.get("ibi_analysis"),
-        ipma_envelope=ipma_envelope,
+        gfs_analysis=data.get("gfs_analysis"),
+        gfs_hourly=gfs_hourly,
     )
 
     return data

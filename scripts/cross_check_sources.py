@@ -1,11 +1,11 @@
 """
-Cross-check: surf-forecast.com (scraper) vs Open-Meteo Marine.
+Cross-check: surf-forecast.com (scraper) vs Open-Meteo Marine vs NOAA GFS.
 
 Run manually:  python scripts/cross_check_sources.py
 Appends one CSV row per spot per run to scripts/cross_check_log.csv.
 
-Purpose: measure divergence between the two sources to calibrate the
-confidence thresholds in open_meteo_explainer.py.
+Purpose: measure divergence between forecast sources to calibrate the
+confidence thresholds and unified harmonic weights.
 """
 import csv
 import json
@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT))
 
 import scraper
 import open_meteo
+import noaa_gfs
 
 SPOTS = json.loads((ROOT / "spots.json").read_text(encoding="utf-8"))
 LOG_FILE = Path(__file__).parent / "cross_check_log.csv"
@@ -97,6 +98,16 @@ def _check_spot(spot: dict, now_utc: datetime) -> dict:
         om_error = str(e)
         print(f"  [ERROR] OM fetch failed: {e}")
 
+    # --- NOAA GFS ---
+    gfs = {}
+    gfs_error = None
+    try:
+        gfs_data = noaa_gfs.fetch(spot["lat"], spot["lon"], now_utc)
+        gfs = gfs_data.get("current") or {}
+    except Exception as e:
+        gfs_error = str(e)
+        print(f"  [ERROR] GFS fetch failed: {e}")
+
     sf_height = sf.get("height_m")
     sf_period = sf.get("period_s")
     sf_dir_text = sf.get("swell_direction")
@@ -109,26 +120,47 @@ def _check_spot(spot: dict, now_utc: datetime) -> dict:
     om_dir_deg = om.get("swell_direction")
     om_wind_dir = om.get("wind_direction")
     om_wind_speed = om.get("wind_speed")
+    gfs_wave = gfs.get("wave_height")
+    gfs_swell = gfs.get("swell_height")
+    gfs_period = gfs.get("swell_period")
+    gfs_dir_deg = gfs.get("swell_direction")
+    gfs_wind_dir = gfs.get("wind_direction")
+    gfs_wind_speed = gfs.get("wind_speed")
 
     sf_dir_deg = _DIRECTION_DEGREES.get(sf_dir_text) if sf_dir_text else None
     dir_diff = round(_bearing_diff(sf_dir_deg, om_dir_deg), 1) if (sf_dir_deg is not None and om_dir_deg is not None) else None
     om_wind_label = _om_wind_label(om_wind_dir, offshore_bearing)
+    gfs_wind_label = _om_wind_label(gfs_wind_dir, offshore_bearing)
     wind_agree = _winds_agree(sf_wind, om_wind_label)
+    gfs_wind_agree = _winds_agree(sf_wind, gfs_wind_label)
 
     h_div = _pct(sf_height, om_wave)
     s_div = _pct(sf_height, om_swell)
     p_div = _pct(sf_period, om_period)
+    gfs_h_div = _pct(sf_height, gfs_wave)
+    gfs_s_div = _pct(sf_height, gfs_swell)
+    gfs_p_div = _pct(sf_period, gfs_period)
+    gfs_dir_diff = round(_bearing_diff(sf_dir_deg, gfs_dir_deg), 1) if (sf_dir_deg is not None and gfs_dir_deg is not None) else None
 
     # Print comparison
     if sf_height is not None or om_wave is not None:
         print(f"  Height     SF={sf_height}m   OM wave={om_wave}m   OM swell={om_swell}m"
               f"   d wave={h_div}%   d swell={s_div}%")
+    if sf_height is not None or gfs_wave is not None:
+        print(f"             SF={sf_height}m   GFS wave={gfs_wave}m   GFS swell={gfs_swell}m"
+              f"   d wave={gfs_h_div}%   d swell={gfs_s_div}%")
     if sf_period is not None or om_period is not None:
         print(f"  Period     SF={sf_period}s   OM={om_period}s   d={p_div}%")
+    if sf_period is not None or gfs_period is not None:
+        print(f"             SF={sf_period}s   GFS={gfs_period}s   d={gfs_p_div}%")
     if sf_dir_text or om_dir_deg is not None:
         print(f"  Direction  SF={sf_dir_text} ({sf_dir_deg}deg)   OM={om_dir_deg}deg   d={dir_diff}deg")
+    if sf_dir_text or gfs_dir_deg is not None:
+        print(f"             SF={sf_dir_text} ({sf_dir_deg}deg)   GFS={gfs_dir_deg}deg   d={gfs_dir_diff}deg")
     if sf_wind or om_wind_dir is not None:
         print(f"  Wind       SF={sf_wind}   OM={om_wind_label} ({om_wind_speed} km/h from {om_wind_dir}deg)   => {wind_agree}")
+    if sf_wind or gfs_wind_dir is not None:
+        print(f"             SF={sf_wind}   GFS={gfs_wind_label} ({gfs_wind_speed} km/h from {gfs_wind_dir}deg)   => {gfs_wind_agree}")
     if sf_rating is not None:
         print(f"  SF rating  {sf_rating}/10")
 
@@ -138,21 +170,32 @@ def _check_spot(spot: dict, now_utc: datetime) -> dict:
         "sf_height_m": sf_height,
         "om_wave_height": om_wave,
         "om_swell_height": om_swell,
+        "gfs_wave_height": gfs_wave,
+        "gfs_swell_height": gfs_swell,
         "sf_period_s": sf_period,
         "om_swell_period": om_period,
+        "gfs_swell_period": gfs_period,
         "sf_direction_text": sf_dir_text,
         "sf_direction_deg": sf_dir_deg,
         "om_swell_direction_deg": om_dir_deg,
+        "gfs_swell_direction_deg": gfs_dir_deg,
         "sf_wind_state": sf_wind,
         "om_wind_label": om_wind_label,
+        "gfs_wind_label": gfs_wind_label,
         "wind_agree": wind_agree,
+        "gfs_wind_agree": gfs_wind_agree,
         "sf_rating": sf_rating,
         "height_divergence_pct": h_div,
         "swell_divergence_pct": s_div,
+        "gfs_height_divergence_pct": gfs_h_div,
+        "gfs_swell_divergence_pct": gfs_s_div,
         "period_divergence_pct": p_div,
+        "gfs_period_divergence_pct": gfs_p_div,
         "direction_diff_deg": dir_diff,
+        "gfs_direction_diff_deg": gfs_dir_diff,
         "sf_error": sf_error,
         "om_error": om_error,
+        "gfs_error": gfs_error,
     }
 
 
@@ -160,15 +203,21 @@ def _append_csv(rows: list[dict]) -> None:
     fieldnames = [
         "timestamp_utc", "spot_id",
         "sf_height_m", "om_wave_height", "om_swell_height",
-        "sf_period_s", "om_swell_period",
-        "sf_direction_text", "sf_direction_deg", "om_swell_direction_deg",
-        "sf_wind_state", "om_wind_label", "wind_agree",
+        "gfs_wave_height", "gfs_swell_height",
+        "sf_period_s", "om_swell_period", "gfs_swell_period",
+        "sf_direction_text", "sf_direction_deg", "om_swell_direction_deg", "gfs_swell_direction_deg",
+        "sf_wind_state", "om_wind_label", "gfs_wind_label", "wind_agree", "gfs_wind_agree",
         "sf_rating",
         "height_divergence_pct", "swell_divergence_pct",
-        "period_divergence_pct", "direction_diff_deg",
-        "sf_error", "om_error",
+        "gfs_height_divergence_pct", "gfs_swell_divergence_pct",
+        "period_divergence_pct", "gfs_period_divergence_pct",
+        "direction_diff_deg", "gfs_direction_diff_deg",
+        "sf_error", "om_error", "gfs_error",
     ]
-    write_header = not LOG_FILE.exists()
+    write_header = not LOG_FILE.exists() or LOG_FILE.stat().st_size == 0
+    if not write_header:
+        existing_header = LOG_FILE.read_text(encoding="utf-8").splitlines()[0].split(",")
+        write_header = existing_header != fieldnames
     with open(LOG_FILE, "a", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fieldnames)
         if write_header:

@@ -18,6 +18,15 @@ def _normalize_level(level):
     return level if level in VALID_LEVELS else DEFAULT_LEVEL
 
 
+def _to_float(value):
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Height — per-level
 # ---------------------------------------------------------------------------
@@ -256,12 +265,15 @@ def grade_period(p, level=DEFAULT_LEVEL):
 # Wind — shared across levels (for now)
 # ---------------------------------------------------------------------------
 
-def grade_wind(state, level=DEFAULT_LEVEL):
+def grade_wind(state, level=DEFAULT_LEVEL, speed_kmh=None):
     if state is None:
         return ("unknown",
                 "Couldn't read wind state — surf-forecast.com may have changed format.")
     s = state.lower()
     level = _normalize_level(level)
+    speed = _to_float(speed_kmh)
+    is_light = speed is not None and speed < 8
+    is_strong = speed is not None and speed > 22
 
     # Order matters: check compound terms (cross-offshore, cross-onshore)
     # BEFORE the bare "offshore" / "onshore" substring match.
@@ -270,20 +282,36 @@ def grade_wind(state, level=DEFAULT_LEVEL):
                 "Glassy — no wind at all, mirror surface. The dream version of any "
                 "swell. Drop everything and go.")
     if "cross-offshore" in s:
+        if is_strong:
+            return ("yellow",
+                    f"Cross-offshore but strong ({round(speed)} km/h). It still helps "
+                    "hold faces open, but expect blown spray and bumpy takeoffs.")
         return ("green",
                 "Cross-offshore — diagonal from land to sea. Holds wave faces up and "
                 "smooths the surface. Slight bumpiness, but still clean.")
     if "cross-onshore" in s:
+        if is_light:
+            return ("yellow",
+                    f"Light cross-onshore ({round(speed)} km/h) is not ideal, but weak "
+                    "enough that it may stay workable between gusts.")
         return ("yellow",
                 "Cross-onshore — diagonal from sea to land. Adds chop and crumbles "
                 "wave shape before they break properly. Workable if light, annoying "
                 "if not.")
     if "offshore" in s:
+        if is_strong:
+            return ("yellow",
+                    f"Offshore but strong ({round(speed)} km/h). Clean faces, but "
+                    "spray, hold-up, and harder paddling make it less forgiving.")
         return ("green",
                 "Offshore — wind blowing from land out to sea. Cleanest possible "
                 "conditions: faces stand up, surface is smooth, takeoffs are "
                 "predictable. The day you'd photograph.")
     if "onshore" in s:
+        if is_light:
+            return ("yellow",
+                    f"Light onshore ({round(speed)} km/h) will add texture, but it is "
+                    "weak enough that protected corners may still be usable.")
         if level == "advanced":
             return ("red",
                     "Onshore — wind blowing from sea toward the beach. Waves crumble "
@@ -295,6 +323,10 @@ def grade_wind(state, level=DEFAULT_LEVEL):
                 "day-killer: waves crumble before breaking, surface is choppy, timing "
                 "pop-ups becomes guesswork. Even perfect swell gets ruined by this.")
     if "cross-shore" in s or s == "cross":
+        if is_strong:
+            return ("red",
+                    f"Strong cross-shore wind ({round(speed)} km/h) will rake the "
+                    "faces sideways and make the lineup inconsistent.")
         return ("yellow",
                 "Cross-shore — blowing parallel to the beach. Adds chop and "
                 "inconsistent shape. Workable if light, gets messy fast if it picks up.")
@@ -506,7 +538,7 @@ def verdict(data, level=DEFAULT_LEVEL, spot=None):
     grades = [
         ("Height",    grade_height(data.get("height_m"), level)),
         ("Period",    grade_period(data.get("period_s"), level)),
-        ("Wind",      grade_wind(data.get("wind_state"), level)),
+        ("Wind",      grade_wind(data.get("wind_state"), level, data.get("wind_speed_kmh"))),
         ("Direction", grade_direction(
             data.get("swell_direction"),
             spot.get("optimal_swell_bearing"),

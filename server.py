@@ -19,6 +19,10 @@ import explainer
 import open_meteo
 import open_meteo_explainer
 import unified_explainer
+import copernicus_ibi
+import copernicus_ibi_explainer
+import noaa_gfs
+import noaa_gfs_explainer
 
 ROOT = Path(__file__).resolve().parent
 SPOTS = json.loads((ROOT / "spots.json").read_text(encoding="utf-8"))
@@ -46,8 +50,8 @@ def sync_spot(spot_id, level=explainer.DEFAULT_LEVEL, force=False):
     if not force and cached and (time.time() - cached[0]) < CACHE_TTL:
         return cached[1]
 
-    sf_result, om_result = [None], [None]
-    sf_error, om_error = [None], [None]
+    sf_result, om_result, gfs_result, ibi_result = [None], [None], [None], [None]
+    sf_error, om_error, gfs_error, ibi_error = [None], [None], [None], [None]
 
     def fetch_sf():
         try:
@@ -65,12 +69,40 @@ def sync_spot(spot_id, level=explainer.DEFAULT_LEVEL, force=False):
         except Exception as e:
             om_error[0] = str(e)
 
-    t_sf = threading.Thread(target=fetch_sf)
-    t_om = threading.Thread(target=fetch_om)
-    t_sf.start()
-    t_om.start()
-    t_sf.join(timeout=25)
-    t_om.join(timeout=15)
+    def fetch_gfs():
+        lat, lon = spot.get("lat"), spot.get("lon")
+        if lat is None or lon is None:
+            gfs_error[0] = "No lat/lon configured for spot"
+            return
+        try:
+            gfs_result[0] = noaa_gfs.fetch(lat, lon)
+        except Exception as e:
+            gfs_error[0] = str(e)
+
+    def fetch_ibi():
+        lat, lon = spot.get("lat"), spot.get("lon")
+        if lat is None or lon is None:
+            ibi_error[0] = "No lat/lon configured for spot"
+            return
+        try:
+            ibi_result[0] = copernicus_ibi.fetch(lat, lon, offshore_bearing=spot.get("offshore_bearing"))
+            if ibi_result[0] is None:
+                ibi_error[0] = "Copernicus credentials missing or no data returned"
+        except Exception as e:
+            ibi_error[0] = str(e)
+
+    threads = [
+        threading.Thread(target=fetch_sf),
+        threading.Thread(target=fetch_om),
+        threading.Thread(target=fetch_gfs),
+        threading.Thread(target=fetch_ibi),
+    ]
+    for t in threads:
+        t.start()
+    threads[0].join(timeout=25)
+    threads[1].join(timeout=15)
+    threads[2].join(timeout=15)
+    threads[3].join(timeout=15)
 
     if sf_error[0] or sf_result[0] is None:
         return {
@@ -109,12 +141,45 @@ def sync_spot(spot_id, level=explainer.DEFAULT_LEVEL, force=False):
         data["om_error"] = om_error[0] or "Open-Meteo fetch failed"
 
     om_hourly = om_result[0].get("hourly", []) if om_result[0] else []
+
+    if gfs_result[0] and not gfs_error[0]:
+        gfs = gfs_result[0]
+        data["gfs_analysis"] = noaa_gfs_explainer.interpret_all(
+            current=gfs.get("current"),
+            optimal_bearing=spot.get("optimal_swell_bearing"),
+            offshore_bearing=spot.get("offshore_bearing"),
+            optimal_label=spot.get("optimal_swell_label"),
+            level=level,
+        )
+        data["gfs_error"] = None
+    else:
+        data["gfs_analysis"] = None
+        data["gfs_error"] = gfs_error[0] or "NOAA GFS fetch failed"
+
+    gfs_hourly = gfs_result[0].get("hourly", []) if gfs_result[0] else []
+
+    if ibi_result[0] and not ibi_error[0]:
+        data["ibi_analysis"] = copernicus_ibi_explainer.interpret_all(
+            current=ibi_result[0].get("current"),
+            optimal_bearing=spot.get("optimal_swell_bearing"),
+            offshore_bearing=spot.get("offshore_bearing"),
+            optimal_label=spot.get("optimal_swell_label"),
+            level=level,
+        )
+        data["ibi_error"] = None
+    else:
+        data["ibi_analysis"] = None
+        data["ibi_error"] = ibi_error[0] or "Copernicus IBI fetch failed"
+
     data["unified"] = unified_explainer.unify(
         sf_data=data,
         om_analysis=data.get("om_analysis"),
         om_hourly=om_hourly,
         spot=spot,
         level=level,
+        ibi_analysis=data.get("ibi_analysis"),
+        gfs_analysis=data.get("gfs_analysis"),
+        gfs_hourly=gfs_hourly,
     )
 
     CACHE[cache_key] = (time.time(), data)

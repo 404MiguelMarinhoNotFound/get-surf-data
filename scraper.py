@@ -87,6 +87,15 @@ def parse_summary(text):
     if m:
         out["wind_state"] = m.group(1).lower()
 
+    # "Wind (km/h) 12" or "wind speed is 12 km/h" or "12 km/h ... wind"
+    m = re.search(r"Wind\s*\(km/h\)\s*(\d+)", text, re.IGNORECASE)
+    if not m:
+        m = re.search(r"wind\s+speed[^.]*?(\d+)\s*km/h", text, re.IGNORECASE)
+    if not m:
+        m = re.search(r"(\d+)\s*km/h[^.]*?wind", text, re.IGNORECASE)
+    if m:
+        out["wind_speed_kmh"] = int(m.group(1))
+
     # "swell rating is 11"
     m = re.search(r"swell\s+rating\s+is\s+(\d+)", text, re.IGNORECASE)
     if m:
@@ -589,13 +598,21 @@ def parse_swell_tooltips(html):
         primary = swells[0] if swells else None
         if not primary:
             continue
-        wind = (data.get("windState") or {}).get("text")
-        out[key] = {
+        wind_state_obj = data.get("windState") or {}
+        wind = wind_state_obj.get("text")
+        wind_spd = wind_state_obj.get("speed") or wind_state_obj.get("kmh") or wind_state_obj.get("windSpeed")
+        entry = {
             "height_m": primary.get("height"),
             "period_s": primary.get("period"),
             "swell_direction": primary.get("letters"),
             "wind_state": wind,
         }
+        if wind_spd is not None:
+            try:
+                entry["wind_speed_kmh"] = float(wind_spd)
+            except (TypeError, ValueError):
+                pass
+        out[key] = entry
     return out
 
 

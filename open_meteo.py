@@ -95,14 +95,22 @@ def _today_hours(hourly: list[dict], now: datetime) -> list[dict]:
     return result
 
 
-def fetch(lat: float, lon: float, now_utc: datetime | None = None) -> dict:
+def fetch(lat: float, lon: float, now_utc: datetime | None = None,
+          marine_model: str | None = None, weather_model: str | None = None) -> dict:
     if now_utc is None:
         now_utc = datetime.now(timezone.utc)
 
     common = {"latitude": lat, "longitude": lon, "timezone": "UTC", "forecast_days": 7}
 
-    marine_raw = _get(_MARINE_URL, {**common, "hourly": _MARINE_VARS})
-    weather_raw = _get(_WEATHER_URL, {**common, "hourly": _WEATHER_VARS, "wind_speed_unit": "kmh"})
+    marine_params = {**common, "hourly": _MARINE_VARS}
+    if marine_model:
+        marine_params["models"] = marine_model
+    weather_params = {**common, "hourly": _WEATHER_VARS, "wind_speed_unit": "kmh"}
+    if weather_model:
+        weather_params["models"] = weather_model
+
+    marine_raw = _get(_MARINE_URL, marine_params)
+    weather_raw = _get(_WEATHER_URL, weather_params)
 
     hourly = _zip_hourly(marine_raw, weather_raw)
     current = _find_current(hourly, now_utc)

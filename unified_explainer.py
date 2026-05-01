@@ -2,6 +2,7 @@
 
 Pure merger helpers: no network, no filesystem, no UI concerns.
 """
+import math
 from datetime import datetime, timedelta, timezone
 
 try:
@@ -9,7 +10,12 @@ try:
 except ImportError:  # pragma: no cover
     ZoneInfo = None
 
-from open_meteo_explainer import _bearing_diff, _hour_score
+from open_meteo_explainer import (
+    _bearing_diff,
+    _hour_score,
+    hour_factor_scores,
+    tide_suitability,
+)
 
 
 TIER_GOLD = "gold"
@@ -40,9 +46,9 @@ SCORE_GREEN = 6.2
 SCORE_BEST_WINDOW = 5.0
 
 _SF_HARD_GATE_LABELS = {"Height", "Period", "Tide"}
-_OM_HARD_GATE_LABELS = {"Wind", "Shape"}
-_GFS_HARD_GATE_LABELS = {"Wind", "Shape", "Height", "Period"}
-_IBI_HARD_GATE_LABELS = {"Height", "Period"}
+_OM_HARD_GATE_LABELS = set()
+_GFS_HARD_GATE_LABELS = set()
+_IBI_HARD_GATE_LABELS = set()
 
 _SF_QUALITY_CURVE = {
     0: 0.0,
@@ -260,7 +266,100 @@ def _weighted_harmonic(sf_score, om_score, ibi_score=None,
     return 1.0 / sum((w / total_weight) / score for score, w in available.values())
 
 
+def _weighted_geometric(sf_score, om_score, ibi_score=None,
+                        sf_weight=SF_WEIGHT, om_weight=OM_WEIGHT, ibi_weight=IBI_WEIGHT,
+                        gfs_score=None, gfs_weight=GFS_WEIGHT, epsilon=0.05):
+    """Weighted geometric mean across available 0-10 source scores.
+
+    Scores are normalized to 0-1 before multiplication. A small epsilon keeps
+    one noisy zero-valued source from mathematically erasing every other source;
+    true vetoes are handled by hard gates.
+    """
+    raw = {
+        "sf":  (_clamp_score(sf_score),  sf_weight),
+        "om":  (_clamp_score(om_score),  om_weight),
+        "gfs": (_clamp_score(gfs_score), gfs_weight),
+        "ibi": (_clamp_score(ibi_score), ibi_weight),
+    }
+    available = {k: v for k, v in raw.items() if v[0] is not None}
+    if not available:
+        return None
+    total_weight = sum(w for _, w in available.values())
+    if total_weight <= 0:
+        return None
+    product = 1.0
+    for score, weight in available.values():
+        product *= max(score / 10.0, epsilon) ** (weight / total_weight)
+    return _clamp_score(product * 10.0)
+
+
+def _raw_variable_spread(rows):
+    normalized = [
+        _normalize_model_row(row)
+        for row in rows or []
+        if isinstance(row, dict) and row
+    ]
+
+    def spread_for(*keys):
+        values = []
+        for row in normalized:
+            for key in keys:
+                value = _to_float(row.get(key))
+                if value is not None:
+                    values.append(value)
+                    break
+        if len(values) < 2:
+            return None
+        return round(max(values) - min(values), 2)
+
+    return {
+        "height_m": spread_for("swell_height", "wave_height"),
+        "period_s": spread_for("swell_period", "wave_period", "swell_peak_period"),
+        "wind_speed_kmh": spread_for("wind_speed"),
+        "wind_direction_deg": spread_for("wind_direction"),
+    }
+
+
+def _confidence_detail(sf_score, om_score, ibi_score=None, gfs_score=None, weights=None, rows=None):
+    inputs = _blend_inputs(sf_score, om_score, ibi_score, gfs_score, weights)
+    scores = [s for s, _ in inputs.values()]
+    source_score_spread = round(max(scores) - min(scores), 2) if len(scores) >= 2 else 0.0
+    raw_spread = _raw_variable_spread(rows or [])
+
+    source_count_score = {
+        0: 0.0,
+        1: 0.45,
+        2: 0.75,
+        3: 0.82,
+        4: 0.85,
+    }.get(len(inputs), 0.85)
+    spread_penalty = min(0.35, source_score_spread * 0.05)
+    raw_penalty = 0.0
+    height_spread = raw_spread.get("height_m")
+    period_spread = raw_spread.get("period_s")
+    wind_spread = raw_spread.get("wind_speed_kmh")
+    direction_spread = raw_spread.get("wind_direction_deg")
+    if height_spread is not None and height_spread > 0.4:
+        raw_penalty += 0.05
+    if period_spread is not None and period_spread > 3.0:
+        raw_penalty += 0.05
+    if wind_spread is not None and wind_spread > 10.0:
+        raw_penalty += 0.05
+    if direction_spread is not None and direction_spread > 60.0:
+        raw_penalty += 0.05
+
+    confidence_score = max(0.0, min(1.0, source_count_score - spread_penalty - raw_penalty))
+    return {
+        "source_count": len(inputs),
+        "source_score_spread": source_score_spread,
+        "missing_sources": [key for key in BASE_WEIGHTS if key not in inputs],
+        "raw_variable_spread": raw_spread,
+        "confidence_score_0_1": round(confidence_score, 2),
+    }
+
+
 def _confidence(sf_score, om_score, ibi_score=None, gfs_score=None, weights=None):
+    detail = _confidence_detail(sf_score, om_score, ibi_score, gfs_score, weights)
     inputs = _blend_inputs(sf_score, om_score, ibi_score, gfs_score, weights)
     n = len(inputs)
     if n == 0:
@@ -268,23 +367,13 @@ def _confidence(sf_score, om_score, ibi_score=None, gfs_score=None, weights=None
     if n == 1:
         only = next(iter(inputs))
         return f"{only}_only"
-    scores = [s for s, _ in inputs.values()]
-    spread = max(scores) - min(scores)
-    if n == 2:
-        return "high" if spread <= 1.5 else "mixed"
-    # 3+ sources: high if any pair within 1.5pts; gold-tier consensus if all within 1.0
-    pairs = [abs(a - b) for i, a in enumerate(scores) for b in scores[i+1:]]
-    if all(p <= 1.0 for p in pairs):
-        return "high"
-    if min(pairs) <= 1.5:
-        return "high"
-    return "mixed"
+    return "high" if detail["confidence_score_0_1"] >= 0.65 else "mixed"
 
 
 def _consensus_score(sf_score, om_score, ibi_score=None, gfs_score=None,
                      extra_penalty=0.0, weights=None):
     weights = weights or BASE_WEIGHTS
-    base = _weighted_harmonic(
+    base = _weighted_geometric(
         sf_score,
         om_score,
         ibi_score,
@@ -296,15 +385,7 @@ def _consensus_score(sf_score, om_score, ibi_score=None, gfs_score=None,
     )
     if base is None:
         return None
-    inputs = _blend_inputs(sf_score, om_score, ibi_score, gfs_score, weights)
-    scores = [s for s, _ in inputs.values()]
-    penalty = 0.0
-    if len(scores) >= 2:
-        # Max pairwise spread across available sources, scaled. Caps at 1.0.
-        spread = max(scores) - min(scores)
-        penalty = min(1.0, spread * 0.12)
-    penalty += _to_float(extra_penalty) or 0.0
-    return _clamp_score(base - penalty)
+    return _clamp_score(base - (_to_float(extra_penalty) or 0.0))
 
 
 def _parse_dt(value):
@@ -333,18 +414,54 @@ def _is_om_available(om_analysis):
     return isinstance(om_analysis, dict) and bool(om_analysis)
 
 
-def _current_om_score(om_analysis, spot):
-    if not _is_om_available(om_analysis):
+def _score_model_row(row, spot, level, tide_color=None):
+    if not row:
         return None
-    current_like = _normalize_model_row(om_analysis)
+    normalized = _normalize_model_row(row)
     try:
         return _hour_score(
-            current_like,
+            normalized,
             spot.get("optimal_swell_bearing"),
             spot.get("offshore_bearing"),
+            level=level,
+            spot=spot,
+            tide_color=tide_color,
         )
     except Exception:
         return None
+
+
+def _model_factor_scores(row, spot, level, tide_color=None):
+    if not row:
+        return None
+    try:
+        factors = hour_factor_scores(
+            _normalize_model_row(row),
+            spot.get("optimal_swell_bearing"),
+            spot.get("offshore_bearing"),
+            level=level,
+            spot=spot,
+            tide_color=tide_color,
+        )
+    except Exception:
+        return None
+    return {
+        key: (round(value, 3) if value is not None else None)
+        for key, value in factors.items()
+    }
+
+
+def _apply_tide_to_score(score, tide_color):
+    score = _clamp_score(score)
+    if score is None:
+        return None
+    return _clamp_score(score * tide_suitability(tide_color))
+
+
+def _current_om_score(om_analysis, spot, level, tide_color=None):
+    if not _is_om_available(om_analysis):
+        return None
+    return _score_model_row(om_analysis, spot, level, tide_color=tide_color)
 
 
 def _is_ibi_available(ibi_analysis):
@@ -355,21 +472,13 @@ def _is_gfs_available(gfs_analysis):
     return isinstance(gfs_analysis, dict) and bool(gfs_analysis)
 
 
-def _current_gfs_score(gfs_analysis, spot):
+def _current_gfs_score(gfs_analysis, spot, level, tide_color=None):
     if not _is_gfs_available(gfs_analysis):
         return None
-    current_like = _normalize_model_row(gfs_analysis)
-    try:
-        return _hour_score(
-            current_like,
-            spot.get("optimal_swell_bearing"),
-            spot.get("offshore_bearing"),
-        )
-    except Exception:
-        return None
+    return _score_model_row(gfs_analysis, spot, level, tide_color=tide_color)
 
 
-def _score_ibi_hour_with_om_wind(ibi_row, om_row, spot):
+def _score_ibi_hour_with_om_wind(ibi_row, om_row, spot, level="improver", tide_color=None):
     """Score IBI wave fields with OM wind fields when they line up in time."""
     if not ibi_row:
         return None
@@ -380,22 +489,15 @@ def _score_ibi_hour_with_om_wind(ibi_row, om_row, spot):
         fused["wind_speed"] = om_like.get("wind_speed")
         fused["wind_direction"] = om_like.get("wind_direction")
         fused["wind_gusts"] = om_like.get("wind_gusts")
-    try:
-        return _hour_score(
-            fused,
-            spot.get("optimal_swell_bearing"),
-            spot.get("offshore_bearing"),
-        )
-    except Exception:
-        return None
+    return _score_model_row(fused, spot, level, tide_color=tide_color)
 
 
-def _current_ibi_score(ibi_analysis, spot, om_analysis=None):
+def _current_ibi_score(ibi_analysis, spot, om_analysis=None, level="improver", tide_color=None):
     """IBI lacks wind data, so _hour_score will fall back to the neutral wind
     score (5.0). That's fine — IBI's contribution is wave/swell/direction."""
     if not _is_ibi_available(ibi_analysis):
         return None
-    return _score_ibi_hour_with_om_wind(ibi_analysis, om_analysis, spot)
+    return _score_ibi_hour_with_om_wind(ibi_analysis, om_analysis, spot, level=level, tide_color=tide_color)
 
 
 def _current_sf_score(sf_data):
@@ -436,7 +538,28 @@ def _label_reason(label):
     return reasons.get(label, "Conditions have a hard stop right now.")
 
 
-def _hard_gate(sf_data, om_analysis, ibi_analysis=None, gfs_analysis=None):
+def _model_severe_hard_gate(row, spot, source, level="improver"):
+    normalized = _normalize_model_row(row)
+    wave_h = _to_float(normalized.get("swell_height") or normalized.get("wave_height"))
+    period = _to_float(normalized.get("swell_period") or normalized.get("wave_period"))
+
+    if wave_h is not None and wave_h < 0.20:
+        return {"blocked": True, "reason": "There is not enough ridable wave height right now.", "source": f"{source}_flat"}
+
+    if wave_h is not None and period is not None:
+        danger_power = {
+            "beginner": 56.0,
+            "improver": 88.0,
+            "intermediate": 225.0,
+            "advanced": 450.0,
+        }.get(level, 88.0)
+        if wave_h ** 2 * period >= danger_power:
+            return {"blocked": True, "reason": "The waves are carrying too much power for this level.", "source": f"{source}_power"}
+
+    return _om_hour_hard_gate(normalized, spot, source)
+
+
+def _hard_gate(sf_data, om_analysis, ibi_analysis=None, gfs_analysis=None, spot=None, level="improver"):
     sf_data = sf_data or {}
     om = om_analysis if isinstance(om_analysis, dict) else {}
     ibi = ibi_analysis if isinstance(ibi_analysis, dict) else {}
@@ -462,15 +585,14 @@ def _hard_gate(sf_data, om_analysis, ibi_analysis=None, gfs_analysis=None):
         if label in _IBI_HARD_GATE_LABELS:
             return {"blocked": True, "reason": _label_reason(label), "source": f"ibi_{label.lower()}"}
 
+    for source, analysis in (("om", om), ("gfs", gfs), ("ibi", ibi)):
+        gate = _model_severe_hard_gate(analysis, spot or {}, source, level=level)
+        if gate.get("blocked"):
+            return gate
+
     sf = _normalize_verdict(sf_data.get("verdict"))
-    om_verdict = _normalize_verdict(om.get("om_verdict"))
-    gfs_verdict = _normalize_verdict(gfs.get("gfs_verdict"))
     if sf == DECISION_SKIP and not (sf_reds and all(label == "Direction" for label in sf_reds)):
         return {"blocked": True, "reason": "Conditions have a hard stop right now.", "source": "sf_verdict"}
-    if om_verdict == DECISION_SKIP and not (om_reds and all(label == "Direction" for label in om_reds)):
-        return {"blocked": True, "reason": "Conditions have a hard stop right now.", "source": "om_verdict"}
-    if gfs_verdict == DECISION_SKIP and not (gfs_reds and all(label == "Direction" for label in gfs_reds)):
-        return {"blocked": True, "reason": "Conditions have a hard stop right now.", "source": "gfs_verdict"}
 
     return {"blocked": False, "reason": None, "source": None}
 
@@ -497,14 +619,19 @@ def _om_hour_hard_gate(row, spot, source="om"):
         return {"blocked": False, "reason": None, "source": None}
     wave_h = _to_float(row.get("swell_height") or row.get("wave_height")) or 0.0
     wind_h = _to_float(row.get("wind_wave_height")) or 0.0
-    if wave_h > 0 and wind_h / wave_h > 0.50:
+    windsea_ratio = wind_h / wave_h if wave_h > 0 else 0.0
+    if wave_h > 0 and windsea_ratio >= 0.65:
         return {"blocked": True, "reason": _label_reason("Shape"), "source": f"{source}_shape"}
 
     speed = _to_float(row.get("wind_speed"))
     wind_dir = _to_float(row.get("wind_direction"))
     offshore = _to_float((spot or {}).get("offshore_bearing"))
     if speed is not None and wind_dir is not None and offshore is not None:
-        if speed >= 5 and _bearing_diff(wind_dir, offshore) > 150:
+        diff_from_offshore = _bearing_diff(wind_dir, offshore)
+        onshore_component = 0.0
+        if diff_from_offshore > 90:
+            onshore_component = speed * max(0.0, math.cos(math.radians(180.0 - diff_from_offshore)))
+        if diff_from_offshore > 150 and onshore_component >= 12.0 and windsea_ratio >= 0.45:
             return {"blocked": True, "reason": _label_reason("Wind"), "source": f"{source}_wind"}
 
     return {"blocked": False, "reason": None, "source": None}
@@ -613,7 +740,7 @@ def _tide_window_effect(dt, tide_events, spot):
     if color == "yellow":
         return {
             "color": color,
-            "penalty": 0.6,
+            "penalty": 0.0,
             "gate": {"blocked": False, "reason": None, "source": "sf_tide"},
             "tide": tide,
         }
@@ -987,49 +1114,31 @@ def _om_by_hour(om_hourly):
     return rows
 
 
-def _score_om_hour(row, spot):
-    if not row:
-        return None
-    try:
-        return _hour_score(
-            _normalize_model_row(row),
-            spot.get("optimal_swell_bearing"),
-            spot.get("offshore_bearing"),
-        )
-    except Exception:
-        return None
+def _score_om_hour(row, spot, level, tide_color=None):
+    return _score_model_row(row, spot, level, tide_color=tide_color)
 
 
-def _score_gfs_hour(row, spot):
-    if not row:
-        return None
-    try:
-        return _hour_score(
-            _normalize_model_row(row),
-            spot.get("optimal_swell_bearing"),
-            spot.get("offshore_bearing"),
-        )
-    except Exception:
-        return None
+def _score_gfs_hour(row, spot, level, tide_color=None):
+    return _score_model_row(row, spot, level, tide_color=tide_color)
 
 
-def _score_hour(hour_dt, sf_cells, om_by_hour, spot, tide_events=None, require_sf=False,
+def _score_hour(hour_dt, sf_cells, om_by_hour, spot, level="improver", tide_events=None, require_sf=False,
                 gfs_by_hour=None, ibi_by_hour=None):
     sf_cell = _nearest_sf_cell(hour_dt, sf_cells)
     sf_raw = sf_cell.get("rating") if sf_cell else None
-    sf_score = _sf_quality_score(sf_raw)
+    tide_effect = _tide_window_effect(hour_dt, tide_events, spot)
+    sf_score = _apply_tide_to_score(_sf_quality_score(sf_raw), tide_effect.get("color"))
     om_row = om_by_hour.get(_hour_key(hour_dt))
     gfs_row = (gfs_by_hour or {}).get(_hour_key(hour_dt))
     ibi_row = (ibi_by_hour or {}).get(_hour_key(hour_dt))
-    om_score = _score_om_hour(om_row, spot)
-    gfs_score = _score_gfs_hour(gfs_row, spot)
-    ibi_score = _score_ibi_hour_with_om_wind(ibi_row, om_row, spot)
+    om_score = _score_om_hour(om_row, spot, level, tide_color=tide_effect.get("color"))
+    gfs_score = _score_gfs_hour(gfs_row, spot, level, tide_color=tide_effect.get("color"))
+    ibi_score = _score_ibi_hour_with_om_wind(ibi_row, om_row, spot, level=level, tide_color=tide_effect.get("color"))
     if sf_score is None and om_score is None and gfs_score is None and ibi_score is None:
         return None
     hard_gate = _om_hour_hard_gate(om_row, spot, "om")
     gfs_gate = _om_hour_hard_gate(gfs_row, spot, "gfs")
     ibi_gate = _om_hour_hard_gate(ibi_row, spot, "ibi")
-    tide_effect = _tide_window_effect(hour_dt, tide_events, spot)
     tide_gate = tide_effect.get("gate") or {}
     blocked_by = []
     if hard_gate.get("blocked"):
@@ -1046,6 +1155,9 @@ def _score_hour(hour_dt, sf_cells, om_by_hour, spot, tide_events=None, require_s
         blocked_by.append(tide_gate.get("source") or "sf_tide")
         if not hard_gate.get("blocked"):
             hard_gate = tide_gate
+    sf_low_rating = require_sf and sf_raw is not None and sf_raw <= 2
+    if sf_low_rating:
+        blocked_by.append("sf_low_rating")
     if require_sf and sf_score is None:
         blocked_by.append("sf_gap")
     if om_row is not None and om_score is None:
@@ -1070,11 +1182,11 @@ def _score_hour(hour_dt, sf_cells, om_by_hour, spot, tide_events=None, require_s
         om_score,
         ibi_score,
         gfs_score=gfs_score,
-        extra_penalty=tide_effect.get("penalty", 0.0),
         weights=weights,
     )
     window_eligible = (
         not (require_sf and sf_score is None)
+        and not sf_low_rating
         and not (om_row is not None and om_score is None)
         and not (gfs_row is not None and gfs_score is None)
         and not (ibi_row is not None and ibi_score is None)
@@ -1097,7 +1209,21 @@ def _score_hour(hour_dt, sf_cells, om_by_hour, spot, tide_events=None, require_s
         "hard_gate": hard_gate,
         "blocked_by": blocked_by,
         "confidence": _confidence(sf_score, om_score, ibi_score, gfs_score=gfs_score, weights=weights),
+        "confidence_detail": _confidence_detail(
+            sf_score,
+            om_score,
+            ibi_score,
+            gfs_score=gfs_score,
+            weights=weights,
+            rows=[row for row in (om_row, gfs_row, ibi_row) if row],
+        ),
         "weights": weights,
+        "factor_scores": {
+            "om": _model_factor_scores(om_row, spot, level, tide_color=tide_effect.get("color")),
+            "gfs": _model_factor_scores(gfs_row, spot, level, tide_color=tide_effect.get("color")),
+            "ibi": _model_factor_scores(ibi_row, spot, level, tide_color=tide_effect.get("color")),
+            "tide": tide_suitability(tide_effect.get("color")),
+        },
         "tide": {
             "color": tide_effect.get("color"),
             **(tide_effect.get("tide") or {}),
@@ -1108,10 +1234,10 @@ def _score_hour(hour_dt, sf_cells, om_by_hour, spot, tide_events=None, require_s
 
 
 def _score_sf_cell(cell, tide_events=None, spot=None):
-    sf_score = _sf_quality_score(cell["rating"])
     tide_effect = _tide_window_effect(cell["dt"], tide_events, spot)
+    sf_score = _apply_tide_to_score(_sf_quality_score(cell["rating"]), tide_effect.get("color"))
     hard_gate = tide_effect.get("gate") or {"blocked": False, "reason": None, "source": None}
-    score = _consensus_score(sf_score, None, extra_penalty=tide_effect.get("penalty", 0.0))
+    score = _consensus_score(sf_score, None)
     blocked_by = []
     if hard_gate.get("blocked"):
         blocked_by.append(hard_gate.get("source") or "sf_tide")
@@ -1132,7 +1258,12 @@ def _score_sf_cell(cell, tide_events=None, spot=None):
         "hard_gate": hard_gate,
         "blocked_by": blocked_by,
         "confidence": "sf_only",
+        "confidence_detail": _confidence_detail(sf_score, None, None),
         "weights": {"sf": 1.0, "om": 0.0, "gfs": 0.0, "ibi": 0.0},
+        "factor_scores": {
+            "sf": {"tide": tide_suitability(tide_effect.get("color"))},
+            "tide": tide_suitability(tide_effect.get("color")),
+        },
         "tide": {
             "color": tide_effect.get("color"),
             **(tide_effect.get("tide") or {}),
@@ -1309,6 +1440,32 @@ def _window_confidence(block):
     return "mixed"
 
 
+def _window_confidence_detail(block):
+    details = [row.get("confidence_detail") for row in block if isinstance(row.get("confidence_detail"), dict)]
+    if not details:
+        return None
+    raw_keys = set()
+    for detail in details:
+        raw_keys.update((detail.get("raw_variable_spread") or {}).keys())
+    return {
+        "source_count": min(detail.get("source_count", 0) for detail in details),
+        "source_score_spread": round(max(detail.get("source_score_spread", 0.0) for detail in details), 2),
+        "missing_sources": sorted({source for detail in details for source in detail.get("missing_sources", [])}),
+        "raw_variable_spread": {
+            key: max(
+                (
+                    (detail.get("raw_variable_spread") or {}).get(key)
+                    for detail in details
+                    if (detail.get("raw_variable_spread") or {}).get(key) is not None
+                ),
+                default=None,
+            )
+            for key in sorted(raw_keys)
+        },
+        "confidence_score_0_1": round(min(detail.get("confidence_score_0_1", 0.0) for detail in details), 2),
+    }
+
+
 def _score_components(block):
     components = []
     for row in block:
@@ -1322,6 +1479,8 @@ def _score_components(block):
             "gfs_score": round(row["gfs_score"], 1) if row.get("gfs_score") is not None else None,
             "ibi_score": round(row["ibi_score"], 1) if row.get("ibi_score") is not None else None,
             "tide": tide.get("color"),
+            "factor_scores": row.get("factor_scores"),
+            "confidence_detail": row.get("confidence_detail"),
         })
     return components
 
@@ -1351,6 +1510,7 @@ def _window_payload(block, now_dt, spot):
         ),
         "reason": _window_reason(block, spot),
         "confidence": _window_confidence(block),
+        "confidence_detail": _window_confidence_detail(block),
         "score_components": _score_components(block),
         "blocked_by": blocked_by,
     }
@@ -1389,7 +1549,7 @@ def _now_tier(scored_hours, now_dt):
 
 
 def find_next_windows(rating_timeline, om_hourly, spot, sf_now_utc, tide=None,
-                      gfs_hourly=None, ibi_hourly=None):
+                      gfs_hourly=None, ibi_hourly=None, level="improver"):
     now_dt = _parse_dt(sf_now_utc) or datetime.now(timezone.utc)
     cutoff = now_dt + timedelta(days=7)
     spot = spot or {}
@@ -1413,6 +1573,7 @@ def find_next_windows(rating_timeline, om_hourly, spot, sf_now_utc, tide=None,
                 sf_cells,
                 om_hours,
                 spot,
+                level=level,
                 tide_events=tide_events,
                 require_sf=require_sf,
                 gfs_by_hour=gfs_hours,
@@ -1485,11 +1646,19 @@ def unify(
     sf_data = sf_data or {}
     spot = spot or {}
     try:
-        sf_score = _current_sf_score(sf_data)
-        om_score = _current_om_score(om_analysis, spot)
-        gfs_score = _current_gfs_score(gfs_analysis, spot)
-        ibi_score = _current_ibi_score(ibi_analysis, spot, om_analysis)
-        hard_gate = _hard_gate(sf_data, om_analysis, ibi_analysis, gfs_analysis)
+        now_dt = _parse_dt(sf_data.get("now_utc") or sf_data.get("fetched_at")) or datetime.now(timezone.utc)
+        tide_data = sf_data.get("tide")
+        tide_events = tide_data.get("events") if isinstance(tide_data, dict) else tide_data
+        tide_effect = _tide_window_effect(now_dt, tide_events, spot)
+        tide_color = tide_effect.get("color")
+        sf_score = _apply_tide_to_score(_current_sf_score(sf_data), tide_color)
+        om_score = _current_om_score(om_analysis, spot, level, tide_color=tide_color)
+        gfs_score = _current_gfs_score(gfs_analysis, spot, level, tide_color=tide_color)
+        ibi_score = _current_ibi_score(ibi_analysis, spot, om_analysis, level=level, tide_color=tide_color)
+        hard_gate = _hard_gate(sf_data, om_analysis, ibi_analysis, gfs_analysis, spot=spot, level=level)
+        tide_gate = tide_effect.get("gate") or {}
+        if tide_gate.get("blocked") and not hard_gate.get("blocked"):
+            hard_gate = tide_gate
         available = _available_sources(sf_score, om_score, gfs_score, ibi_score)
         weights = _adaptive_weights(
             sf=sf_data,
@@ -1504,10 +1673,25 @@ def unify(
             om_score,
             ibi_score,
             gfs_score=gfs_score,
-            extra_penalty=_direction_penalty(sf_data, om_analysis, ibi_analysis, gfs_analysis),
             weights=weights,
         )
         confidence = _confidence(sf_score, om_score, ibi_score, gfs_score=gfs_score, weights=weights)
+        confidence_detail = _confidence_detail(
+            sf_score,
+            om_score,
+            ibi_score,
+            gfs_score=gfs_score,
+            weights=weights,
+            rows=[
+                row
+                for row in (
+                    _normalize_model_row(om_analysis) if om_analysis else None,
+                    _normalize_model_row(gfs_analysis) if gfs_analysis else None,
+                    _normalize_model_row(ibi_analysis) if ibi_analysis else None,
+                )
+                if row
+            ],
+        )
 
         tier = _tier_for_score(score, hard_gate, has_om=bool(available - {"sf"}))
         decision = _decision_for_tier(tier)
@@ -1519,6 +1703,7 @@ def unify(
             tide=sf_data.get("tide"),
             gfs_hourly=gfs_hourly or [],
             ibi_hourly=ibi_hourly or [],
+            level=level,
         )
         reason = _decision_reason(
             sf_data,
@@ -1544,6 +1729,7 @@ def unify(
             "gold_count_7d": windows.get("gold_count_7d", 0),
             "score": round(score, 1) if score is not None else None,
             "confidence": confidence,
+            "confidence_detail": confidence_detail,
             "decision_reason": reason,
             "level": level,
             "sources_used": sources_used,
@@ -1554,6 +1740,14 @@ def unify(
                 "ibi": round(ibi_score, 1) if ibi_score is not None else None,
             },
             "weights": weights,
+            "factor_scores": {
+                "om": _model_factor_scores(om_analysis, spot, level, tide_color=tide_color),
+                "gfs": _model_factor_scores(gfs_analysis, spot, level, tide_color=tide_color),
+                "ibi": _model_factor_scores(ibi_analysis, spot, level, tide_color=tide_color),
+                "tide": tide_suitability(tide_color),
+            },
+            "hard_gate_detail": hard_gate,
+            "scoring_model": "doctrine_v2_geometric_suitability",
         }
     except Exception:
         return {
@@ -1570,9 +1764,19 @@ def unify(
             "gold_count_7d": 0,
             "score": None,
             "confidence": "unknown",
+            "confidence_detail": {
+                "source_count": 0,
+                "source_score_spread": 0.0,
+                "missing_sources": list(BASE_WEIGHTS),
+                "raw_variable_spread": {},
+                "confidence_score_0_1": 0.0,
+            },
             "decision_reason": "There is not enough clean data to make a confident call.",
             "level": level,
             "sources_used": [],
             "source_scores": {"sf": None, "om": None, "gfs": None, "ibi": None},
             "weights": {"sf": 0.0, "om": 0.0, "gfs": 0.0, "ibi": 0.0},
+            "factor_scores": {},
+            "hard_gate_detail": {"blocked": False, "reason": None, "source": None},
+            "scoring_model": "doctrine_v2_geometric_suitability",
         }

@@ -1,60 +1,66 @@
-"""Tests for the N-source weighted-harmonic blend in unified_explainer."""
+"""Tests for the N-source doctrine blend in unified_explainer."""
 import unittest
 from datetime import datetime, timezone
 
 import unified_explainer as ue
 
 
-class WeightedHarmonicTests(unittest.TestCase):
-    def test_two_source_matches_legacy(self):
+class WeightedGeometricTests(unittest.TestCase):
+    def test_two_source_uses_geometric_mean(self):
         # SF=0.40, OM=0.30; only two sources present.
-        result = ue._weighted_harmonic(8.0, 6.0, None)
+        result = ue._weighted_geometric(8.0, 6.0, None)
         sf_w = 0.40 / 0.70
         om_w = 0.30 / 0.70
-        expected = 1.0 / (sf_w / 8.0 + om_w / 6.0)
+        expected = 10.0 * ((8.0 / 10.0) ** sf_w) * ((6.0 / 10.0) ** om_w)
         self.assertAlmostEqual(result, expected, places=4)
 
     def test_three_source_blend_renormalizes_current_base_weights(self):
-        result = ue._weighted_harmonic(8.0, 6.0, 7.0)
+        result = ue._weighted_geometric(8.0, 6.0, 7.0)
         sf_w = 0.40 / 0.80
         om_w = 0.30 / 0.80
         ibi_w = 0.10 / 0.80
-        expected = 1.0 / (sf_w / 8.0 + om_w / 6.0 + ibi_w / 7.0)
+        expected = 10.0 * ((8.0 / 10.0) ** sf_w) * ((6.0 / 10.0) ** om_w) * ((7.0 / 10.0) ** ibi_w)
         self.assertAlmostEqual(result, expected, places=4)
 
     def test_four_source_blend(self):
-        result = ue._weighted_harmonic(8.0, 6.0, 5.0, gfs_score=7.0)
-        expected = 1.0 / (0.40 / 8.0 + 0.30 / 6.0 + 0.20 / 7.0 + 0.10 / 5.0)
+        result = ue._weighted_geometric(8.0, 6.0, 5.0, gfs_score=7.0)
+        expected = 10.0 * (0.8 ** 0.40) * (0.6 ** 0.30) * (0.7 ** 0.20) * (0.5 ** 0.10)
         self.assertAlmostEqual(result, expected, places=4)
 
     def test_all_none_returns_none(self):
-        self.assertIsNone(ue._weighted_harmonic(None, None, None))
+        self.assertIsNone(ue._weighted_geometric(None, None, None))
 
     def test_single_source_returns_that_score(self):
-        result = ue._weighted_harmonic(None, None, 7.5)
+        result = ue._weighted_geometric(None, None, 7.5)
         self.assertAlmostEqual(result, 7.5, places=4)
 
-    def test_zero_score_short_circuits(self):
-        self.assertEqual(ue._weighted_harmonic(8.0, 0.0, 7.0), 0.0)
+    def test_zero_score_uses_epsilon_not_total_collapse(self):
+        result = ue._weighted_geometric(8.0, 0.0, 7.0)
+        expected = 10.0 * (0.8 ** (0.40 / 0.80)) * (0.05 ** (0.30 / 0.80)) * (0.7 ** (0.10 / 0.80))
+        self.assertAlmostEqual(result, expected, places=4)
+        self.assertGreater(result, 0.0)
 
     def test_renormalization_when_model_sources_missing(self):
-        result = ue._weighted_harmonic(8.0, None, 6.0)
+        result = ue._weighted_geometric(8.0, None, 6.0)
         sf_w = 0.40 / 0.50
         ibi_w = 0.10 / 0.50
-        expected = 1.0 / (sf_w / 8.0 + ibi_w / 6.0)
+        expected = 10.0 * ((8.0 / 10.0) ** sf_w) * ((6.0 / 10.0) ** ibi_w)
         self.assertAlmostEqual(result, expected, places=4)
 
 
 class ConsensusScoreTests(unittest.TestCase):
-    def test_pairwise_penalty_three_sources_agree(self):
+    def test_consensus_does_not_subtract_spread_when_sources_agree(self):
         s = ue._consensus_score(7.0, 7.2, 7.4)
-        base = ue._weighted_harmonic(7.0, 7.2, 7.4)
-        self.assertAlmostEqual(s, base - 0.048, places=3)
+        base = ue._weighted_geometric(7.0, 7.2, 7.4)
+        self.assertAlmostEqual(s, base, places=3)
 
-    def test_pairwise_penalty_three_sources_disagree(self):
+    def test_disagreement_affects_confidence_detail_not_quality_score(self):
         s = ue._consensus_score(2.0, 9.0, 5.0)
-        base = ue._weighted_harmonic(2.0, 9.0, 5.0)
-        self.assertAlmostEqual(s, base - 0.84, places=3)
+        base = ue._weighted_geometric(2.0, 9.0, 5.0)
+        detail = ue._confidence_detail(2.0, 9.0, 5.0)
+        self.assertAlmostEqual(s, base, places=3)
+        self.assertEqual(detail["source_score_spread"], 7.0)
+        self.assertLess(detail["confidence_score_0_1"], 0.65)
 
 
 class ConfidenceTests(unittest.TestCase):

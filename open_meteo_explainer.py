@@ -768,45 +768,23 @@ def secondary_swell_interference(swell1_height, swell2_height, swell1_dir, swell
     return {"flag": False, "label": "Clean dominant swell", "color": "green"}
 
 
-def _hour_score(h, optimal_bearing, offshore_bearing):
-    wave_h = h.get("swell_height") or h.get("wave_height") or 0.0
-    period = h.get("swell_period") or h.get("wave_period") or 0.0
-    wind_h = h.get("wind_wave_height") or 0.0
-    swell_dir = h.get("swell_direction")
-    wind_dir = h.get("wind_direction")
-    h_score = min(wave_h / 3.0 * 10, 10)
-    if period < 8:     p_score = 2.0
-    elif period <= 11: p_score = 5.0
-    elif period <= 15: p_score = 8.0
-    else:              p_score = 10.0
-    ratio = wind_h / wave_h if wave_h > 0 else 0.0
-    if ratio < 0.25:   pur_score = 10.0
-    elif ratio <= 0.50: pur_score = 5.0
-    else:              pur_score = 2.0
-    if swell_dir is not None and optimal_bearing is not None:
-        diff = _bearing_diff(swell_dir, optimal_bearing)
-        if diff <= 20:   dir_score = 10.0
-        elif diff <= 45: dir_score = 7.0
-        elif diff <= 90: dir_score = 4.0
-        else:            dir_score = 1.0
-    else:
-        dir_score = 5.0
-    if wind_dir is not None and offshore_bearing is not None:
-        wdiff = _bearing_diff(wind_dir, offshore_bearing)
-        if wdiff <= 30:    wind_score = 10.0
-        elif wdiff <= 60:  wind_score = 7.0
-        elif wdiff <= 120: wind_score = 5.0
-        elif wdiff <= 150: wind_score = 3.0
-        else:              wind_score = 1.0
-    else:
-        wind_score = 5.0
-    return h_score * 0.30 + p_score * 0.25 + pur_score * 0.20 + dir_score * 0.15 + wind_score * 0.10
+def _hour_score(h, optimal_bearing, offshore_bearing, level=DEFAULT_LEVEL, spot=None, tide_color=None):
+    factors = hour_factor_scores(
+        h,
+        optimal_bearing,
+        offshore_bearing,
+        level=level,
+        spot=spot,
+        tide_color=tide_color,
+    )
+    return _score_from_factors(factors)
 
 
 def best_hourly_window(today_hours, optimal_bearing, offshore_bearing):
     if not today_hours:
         return None
     scores = [_hour_score(h, optimal_bearing, offshore_bearing) for h in today_hours]
+    scores = [score if score is not None else 0.0 for score in scores]
     best_start, best_sum = 0, -1.0
     for i in range(max(1, len(scores) - 2)):
         window_sum = sum(scores[i:i+3])
@@ -846,6 +824,228 @@ def swell_energy(height_m, period_s):
     if not height_m or not period_s:
         return None
     return round(height_m ** 2 * period_s, 1)
+
+
+# ---------------------------------------------------------------------------
+# Doctrine V2 suitability scoring
+# ---------------------------------------------------------------------------
+
+_FACTOR_WEIGHTS = {
+    "height": 0.24,
+    "power": 0.14,
+    "period": 0.12,
+    "wind": 0.18,
+    "chop": 0.12,
+    "direction": 0.08,
+    "secondary": 0.06,
+    "tide": 0.06,
+}
+
+_HEIGHT_SUITABILITY = {
+    "beginner":     (0.25, 0.80, 1.50, 2.40),
+    "improver":     (0.25, 0.60, 1.70, 2.60),
+    "intermediate": (0.35, 0.80, 2.50, 3.50),
+    "advanced":     (0.45, 1.00, 3.50, 5.00),
+}
+
+_PERIOD_SUITABILITY = {
+    "beginner":     (5.0, 9.0, 13.0, 17.0),
+    "improver":     (5.0, 8.0, 14.0, 18.0),
+    "intermediate": (5.0, 7.0, 16.0, 20.0),
+    "advanced":     (5.0, 7.0, 18.0, 22.0),
+}
+
+_POWER_SUITABILITY = {
+    "beginner":     (2.0, 7.0, 24.0, 45.0),
+    "improver":     (1.5, 5.0, 40.0, 70.0),
+    "intermediate": (2.0, 7.0, 110.0, 180.0),
+    "advanced":     (3.0, 10.0, 220.0, 360.0),
+}
+
+
+def _clamp01(value):
+    if value is None:
+        return None
+    return max(0.0, min(1.0, value))
+
+
+def _as_float(value):
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _ramp(value, lo, full_lo, full_hi, hi, floor=0.05):
+    if value is None:
+        return None
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    if value <= lo or value >= hi:
+        return floor
+    if full_lo <= value <= full_hi:
+        return 1.0
+    if value < full_lo:
+        return max(floor, (value - lo) / max(full_lo - lo, 0.001))
+    return max(floor, (hi - value) / max(hi - full_hi, 0.001))
+
+
+def _piecewise(value, points, floor=0.05):
+    if value is None:
+        return None
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    points = sorted(points)
+    if value <= points[0][0]:
+        return max(floor, points[0][1])
+    for (x0, y0), (x1, y1) in zip(points, points[1:]):
+        if value <= x1:
+            span = max(x1 - x0, 0.001)
+            t = (value - x0) / span
+            return max(floor, y0 + (y1 - y0) * t)
+    return max(floor, points[-1][1])
+
+
+def height_suitability(height_m, level=DEFAULT_LEVEL):
+    level = _normalize_level(level)
+    return _ramp(height_m, *_HEIGHT_SUITABILITY[level])
+
+
+def period_suitability(period_s, level=DEFAULT_LEVEL, height_m=None):
+    level = _normalize_level(level)
+    score = _ramp(period_s, *_PERIOD_SUITABILITY[level])
+    if score is None:
+        return None
+    height = height_m or 0.0
+    # Long-period swell hits harder; power_suitability carries most of that,
+    # but this small taper prevents 17s+ learner surf from looking perfect.
+    if level in ("beginner", "improver") and period_s and period_s > _PERIOD_SUITABILITY[level][2]:
+        score *= 0.85 if height < _HEIGHT_SUITABILITY[level][2] else 0.75
+    return _clamp01(score)
+
+
+def power_suitability(power_index, level=DEFAULT_LEVEL):
+    level = _normalize_level(level)
+    return _ramp(power_index, *_POWER_SUITABILITY[level])
+
+
+def wind_suitability(speed_kmh, wind_dir_deg, offshore_bearing):
+    if speed_kmh is None:
+        return None
+    try:
+        speed = float(speed_kmh)
+    except (TypeError, ValueError):
+        return None
+    if speed < 5:
+        return 1.0
+    if wind_dir_deg is None or offshore_bearing is None:
+        return _piecewise(speed, [(5, 0.85), (15, 0.70), (25, 0.45), (40, 0.20)])
+
+    angle = _bearing_diff(float(wind_dir_deg), float(offshore_bearing))
+    if angle <= 30:
+        return _piecewise(speed, [(5, 1.00), (12, 1.00), (22, 0.90), (35, 0.60), (45, 0.35)])
+    if angle <= 60:
+        return _piecewise(speed, [(5, 0.90), (15, 0.88), (25, 0.65), (40, 0.35)])
+    if angle <= 120:
+        return _piecewise(speed, [(5, 0.75), (10, 0.65), (20, 0.45), (35, 0.22)])
+    if angle <= 150:
+        return _piecewise(speed, [(5, 0.60), (10, 0.50), (18, 0.30), (30, 0.12)])
+    return _piecewise(speed, [(5, 0.55), (10, 0.42), (15, 0.25), (30, 0.08)])
+
+
+def chop_suitability(windsea_ratio):
+    return _piecewise(windsea_ratio, [(0.00, 1.00), (0.15, 1.00), (0.25, 0.85), (0.50, 0.40), (0.70, 0.12)])
+
+
+def direction_suitability(swell_dir_deg, optimal_bearing):
+    if swell_dir_deg is None or optimal_bearing is None:
+        return None
+    diff = _bearing_diff(float(swell_dir_deg), float(optimal_bearing))
+    return _piecewise(diff, [(0, 1.00), (20, 1.00), (45, 0.75), (90, 0.40), (140, 0.15), (180, 0.08)])
+
+
+def secondary_suitability(swell1_height, swell2_height, swell1_dir, swell2_dir):
+    if not swell1_height or swell1_height <= 0 or not swell2_height:
+        return None
+    ratio = swell2_height / swell1_height
+    if ratio <= 0.20:
+        return 0.95
+    if swell1_dir is None or swell2_dir is None:
+        return _piecewise(ratio, [(0.20, 0.95), (0.40, 0.75), (0.70, 0.45)])
+    cross_angle = _bearing_diff(swell1_dir, swell2_dir)
+    if cross_angle > 60:
+        return _piecewise(ratio, [(0.20, 0.90), (0.40, 0.55), (0.70, 0.20)])
+    return _piecewise(ratio, [(0.20, 0.95), (0.40, 0.70), (0.70, 0.45)])
+
+
+def tide_suitability(tide_color):
+    if tide_color == "red":
+        return 0.15
+    if tide_color == "yellow":
+        return 0.75
+    return 1.0
+
+
+def _weighted_factor_geometric(factors, weights=None, epsilon=0.05):
+    weights = weights or _FACTOR_WEIGHTS
+    available = {
+        key: _clamp01(value)
+        for key, value in factors.items()
+        if value is not None and key in weights
+    }
+    if not available:
+        return None
+    total = sum(weights[key] for key in available)
+    if total <= 0:
+        return None
+    product = 1.0
+    for key, value in available.items():
+        product *= max(value, epsilon) ** (weights[key] / total)
+    return product
+
+
+def hour_factor_scores(h, optimal_bearing, offshore_bearing, level=DEFAULT_LEVEL, spot=None, tide_color=None):
+    h = h or {}
+    level = _normalize_level(level)
+    wave_h = h.get("swell_height") if h.get("swell_height") is not None else h.get("wave_height")
+    period = h.get("swell_period") if h.get("swell_period") is not None else h.get("wave_period")
+    wind_h = h.get("wind_wave_height")
+    swell_dir = h.get("swell_direction")
+    wind_dir = h.get("wind_direction")
+    wind_speed = h.get("wind_speed")
+    swell2_h = h.get("swell2_height")
+    swell2_dir = h.get("swell2_direction")
+
+    wave_h_float = _as_float(wave_h)
+    period_float = _as_float(period)
+    wind_h_float = _as_float(wind_h)
+    swell2_h_float = _as_float(swell2_h)
+    power_index = (wave_h_float ** 2 * period_float) if wave_h_float is not None and period_float is not None else None
+    windsea_ratio = (wind_h_float / wave_h_float) if wind_h_float is not None and wave_h_float and wave_h_float > 0 else None
+
+    return {
+        "height": height_suitability(wave_h_float, level),
+        "power": power_suitability(power_index, level),
+        "period": period_suitability(period_float, level, wave_h_float),
+        "wind": wind_suitability(wind_speed, wind_dir, offshore_bearing),
+        "chop": chop_suitability(windsea_ratio),
+        "direction": direction_suitability(swell_dir, optimal_bearing),
+        "secondary": secondary_suitability(wave_h_float, swell2_h_float, swell_dir, swell2_dir),
+        "tide": tide_suitability(tide_color),
+    }
+
+
+def _score_from_factors(factors):
+    if all(factors.get(key) is None for key in ("height", "power", "period")):
+        return None
+    quality = _weighted_factor_geometric(factors)
+    return None if quality is None else quality * 10.0
 
 
 # ---------------------------------------------------------------------------

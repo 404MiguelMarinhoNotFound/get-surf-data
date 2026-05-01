@@ -1370,6 +1370,32 @@ def _best_session(scored_hours, predicate, min_hours=2, max_hours=4):
     return candidates[0]["block"]
 
 
+def _top_windows(scored_hours, predicate, now_dt, spot, limit=5, min_hours=2, max_hours=4):
+    candidates = _session_candidates(scored_hours, predicate, min_hours, max_hours)
+    if not candidates:
+        return []
+    candidates.sort(
+        key=lambda item: (
+            -round(item["score"], 6),
+            -_block_duration_hours(item["block"]),
+            item["block"][0]["dt"],
+        )
+    )
+    selected = []
+    used_buckets = set()
+    for cand in candidates:
+        block = cand["block"]
+        start_local = _local_dt(block[0]["dt"], spot)
+        bucket = (start_local.date(), "AM" if start_local.hour < 13 else "PM")
+        if bucket in used_buckets:
+            continue
+        used_buckets.add(bucket)
+        selected.append(block)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
 def _count_blocks(scored_hours, predicate, min_hours=2):
     count = 0
     block = []
@@ -1597,19 +1623,22 @@ def find_next_windows(rating_timeline, om_hourly, spot, sf_now_utc, tide=None,
             "best_window": None,
             "next_decent_window": None,
             "next_gold_window": None,
+            "top_windows": [],
             "gold_count_7d": 0,
             "current_window_ends": None,
         }
 
-    best_block = _best_session(scored, _hour_is_decent, min_hours=2, max_hours=4)
+    top_blocks = _top_windows(scored, _hour_is_decent, now_dt, spot, limit=5, min_hours=2, max_hours=4)
+    top_windows = [_window_payload(block, now_dt, spot) for block in top_blocks]
+    best_window = top_windows[0] if top_windows else None
     gold_block = _best_session(scored, _hour_is_gold, min_hours=2, max_hours=4)
-    best_window = _window_payload(best_block, now_dt, spot)
 
     return {
         "now_tier": _now_tier(scored, now_dt),
         "best_window": best_window,
         "next_decent_window": best_window,
         "next_gold_window": _window_payload(gold_block, now_dt, spot),
+        "top_windows": top_windows,
         "gold_count_7d": _count_blocks(scored, _hour_is_gold, min_hours=2),
         "current_window_ends": _current_window_end(scored, now_dt),
     }
@@ -1726,6 +1755,7 @@ def unify(
             "best_window": windows.get("best_window"),
             "next_decent_window": windows.get("next_decent_window"),
             "next_gold_window": windows.get("next_gold_window"),
+            "top_windows": windows.get("top_windows", []),
             "gold_count_7d": windows.get("gold_count_7d", 0),
             "score": round(score, 1) if score is not None else None,
             "confidence": confidence,
@@ -1761,6 +1791,7 @@ def unify(
             "best_window": None,
             "next_decent_window": None,
             "next_gold_window": None,
+            "top_windows": [],
             "gold_count_7d": 0,
             "score": None,
             "confidence": "unknown",

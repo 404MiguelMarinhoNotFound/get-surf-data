@@ -2026,9 +2026,6 @@ const CHEVRON_RIGHT_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentC
 function renderHeroWindowCarousel(windows, index, currentWindowText) {
   const safeIdx = Math.max(0, Math.min(index, windows.length - 1));
   const single = renderHeroWindow(windows[safeIdx], '', safeIdx === 0 ? currentWindowText : '');
-  if (windows.length <= 1) {
-    return single;
-  }
   const prevDisabled = safeIdx === 0 ? 'disabled' : '';
   const nextDisabled = safeIdx === windows.length - 1 ? 'disabled' : '';
   return `<div class="hero-window-carousel" role="region" aria-live="polite" aria-label="Best surf windows" tabindex="0">

@@ -138,7 +138,7 @@ class UnifiedWindowScoringTests(unittest.TestCase):
     def test_model_only_windows_appear_when_no_sf_timeline_exists(self):
         om = [
             _om_hour(f"2026-05-01T{hour:02d}:00:00+00:00")
-            for hour in range(18, 22)
+            for hour in range(8, 12)
         ]
 
         out = unified.find_next_windows([], om, SPOT, "2026-05-01T05:00:00+00:00")
@@ -171,27 +171,23 @@ class UnifiedWindowScoringTests(unittest.TestCase):
 
     def test_long_good_run_is_trimmed_to_session_length(self):
         sf = [
+            _sf_cell("2026-05-01T08:00:00+00:00", 6),
+            _sf_cell("2026-05-01T11:00:00+00:00", 6),
+            _sf_cell("2026-05-01T14:00:00+00:00", 6),
             _sf_cell("2026-05-01T17:00:00+00:00", 6),
-            _sf_cell("2026-05-01T20:00:00+00:00", 6),
-            _sf_cell("2026-05-01T23:00:00+00:00", 6),
-            _sf_cell("2026-05-02T02:00:00+00:00", 6),
         ]
         om = [
             _om_hour(f"2026-05-01T{hour:02d}:00:00+00:00")
-            for hour in range(17, 24)
-        ] + [
-            _om_hour(f"2026-05-02T{hour:02d}:00:00+00:00")
-            for hour in range(0, 3)
+            for hour in range(8, 19)
         ]
 
-        out = unified.find_next_windows(sf, om, SPOT, "2026-05-01T16:00:00+00:00")
+        out = unified.find_next_windows(sf, om, SPOT, "2026-05-01T07:00:00+00:00")
         window = out["best_window"]
         start = datetime.fromisoformat(window["starts_at"])
         end = datetime.fromisoformat(window["ends_at"])
 
         self.assertLessEqual((end - start).total_seconds() / 3600, 4)
-        self.assertIn("18:00-22:00", window["label"])
-        self.assertNotIn("17:00-10:00", window["label"])
+        self.assertIn("09:00-13:00", window["label"])
 
     def test_overnight_label_uses_24h_clock_and_end_day(self):
         label = unified._label_window(

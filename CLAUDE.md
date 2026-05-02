@@ -40,6 +40,17 @@ No database. `spots.json` is the only persistent config. All four sources are fe
 
 Weights renormalize pro-rata when a source is unavailable and adapt slightly per hour when richer fields such as numeric wind, gusts, or complete wave partitions are present. These are temporary reliability priors, not calibrated final weights.
 
+## 2026-05 top-5 windows carousel
+
+The hero card now shows up to 5 best surf windows over the next 7 days, navigable via left/right arrows (keyboard `ArrowLeft`/`ArrowRight` also work). The stepper always renders — during flat swells it shows "1 / 1" with both arrows disabled so the count is still visible.
+
+Implementation details:
+
+- `unified_explainer._top_windows()` reuses `_session_candidates()`, sorts by score, then deduplicates by `(local_date, AM/PM)` bucket using the spot's timezone. Caps at 5 results.
+- `find_next_windows()` returns `top_windows: [...]`; `best_window` aliases `top_windows[0]` for backwards compatibility.
+- Frontend: `renderHeroWindowCarousel()` wraps the existing `renderHeroWindow` in a `role="region" aria-live="polite"` container. State (windows list + current index) lives on the `.hero-card` element via `data-hero-state` / `data-hero-index` attributes so re-renders don't reset it.
+- No database needed — OM and GFS already deliver 7 days of hourly data; `find_next_windows()` already iterated the full 7-day horizon before this change.
+
 ## 2026-05 doctrine V2 scoring notes
 
 The scoring engine now follows the research doctrine in `C:/Users/Migue/Downloads/surf_decider_research_doctrine.md`.
@@ -136,6 +147,18 @@ Scrapes and grades one spot. `level` is optional, defaults to `improver`.
 Valid levels: `beginner` | `improver` | `intermediate` | `advanced`
 
 Returns: height, period, swell direction, wind state/speed, tide, verdict, wetsuit recommendation, today's M/A/E slot verdicts, 3-hourly rating timeline, marine-source analyses, and the unified consensus. The unified object includes backwards-compatible decision fields plus doctrine V2 diagnostics such as `scoring_model`, `confidence_detail`, `factor_scores`, and `hard_gate_detail`.
+
+Key unified fields for the hero card:
+
+| Field | Type | Description |
+|---|---|---|
+| `best_window` | object\|null | Top-ranked decent window (alias of `top_windows[0]`) |
+| `top_windows` | array | Up to 5 best non-overlapping windows over 7 days, ranked by score |
+| `next_gold_window` | object\|null | Best gold-tier (≥7.5) window |
+| `gold_count_7d` | int | Number of gold blocks in the next 7 days |
+| `current_window_ends` | ISO string\|null | When the current green window closes (if decision is `go`) |
+
+`top_windows` deduplicates by local AM/PM half-day so results spread across the week rather than clustering on one swell event. `best_window` and `next_decent_window` remain for backwards compatibility.
 
 ## Skill tiers (explainer.py)
 

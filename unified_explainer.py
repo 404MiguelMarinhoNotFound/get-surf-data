@@ -1420,6 +1420,7 @@ def _top_windows(scored_hours, predicate, now_dt, spot, limit=5, min_hours=2, ma
         selected.append(block)
         if len(selected) >= limit:
             break
+    selected.sort(key=lambda block: block[0]["dt"])
     return selected
 
 
@@ -1621,6 +1622,9 @@ def find_next_windows(rating_timeline, om_hourly, spot, sf_now_utc, tide=None,
                 continue
             if hour_dt > cutoff:
                 continue
+            local_hour = _local_dt(hour_dt, spot).hour
+            if local_hour >= 20 or local_hour < 5:
+                continue
             row = _score_hour(
                 hour_dt,
                 sf_cells,
@@ -1640,6 +1644,9 @@ def find_next_windows(rating_timeline, om_hourly, spot, sf_now_utc, tide=None,
             if cell_end <= now_dt:
                 continue
             if cell["dt"] > cutoff:
+                continue
+            local_hour = _local_dt(cell["dt"], spot).hour
+            if local_hour >= 20 or local_hour < 5:
                 continue
             scored.append(_score_sf_cell(cell, tide_events=tide_events, spot=spot))
 

@@ -2133,18 +2133,20 @@ function bindUnifiedHero(card) {
     });
   }
 
+  // data-hero-state / data-hero-index live on .hero-card, not on the outer .card container
+  const heroCard = card.querySelector('.hero-card') || card;
   const slot = card.querySelector('.hero-window-slot');
   if (slot) {
     slot.addEventListener('click', (e) => {
       const prev = e.target.closest('.hero-window-prev');
       const next = e.target.closest('.hero-window-next');
-      if (prev && !prev.disabled) { _heroStep(card, -1); }
-      else if (next && !next.disabled) { _heroStep(card, 1); }
+      if (prev && !prev.disabled) { _heroStep(heroCard, -1); }
+      else if (next && !next.disabled) { _heroStep(heroCard, 1); }
     });
     slot.addEventListener('keydown', (e) => {
       if (!e.target.closest('.hero-window-carousel')) return;
-      if (e.key === 'ArrowLeft') { e.preventDefault(); _heroStep(card, -1); }
-      else if (e.key === 'ArrowRight') { e.preventDefault(); _heroStep(card, 1); }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); _heroStep(heroCard, -1); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); _heroStep(heroCard, 1); }
     });
   }
 }

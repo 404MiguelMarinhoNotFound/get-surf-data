@@ -30,10 +30,10 @@ DECISION_SKIP = "skip"
 _KNOWN_VERDICTS = {DECISION_GO, DECISION_MAYBE, DECISION_SKIP}
 _MISSING_VERDICTS = {None, "", "empty", "unknown"}
 
-SF_WEIGHT = 0.40
-OM_WEIGHT = 0.30
-GFS_WEIGHT = 0.20
-IBI_WEIGHT = 0.10
+SF_WEIGHT = 0.25
+OM_WEIGHT = 0.35
+GFS_WEIGHT = 0.25
+IBI_WEIGHT = 0.15
 BASE_WEIGHTS = {
     "sf": SF_WEIGHT,
     "om": OM_WEIGHT,
@@ -61,6 +61,23 @@ _SF_QUALITY_CURVE = {
     7: 8.4,
     8: 9.0,
     9: 9.5,
+    10: 10.0,
+}
+
+# Gold-star override: SF's full predictor stack flagged the cell as a strong
+# local fit (right tide/direction/period for the break). The lifted floor lets
+# small-but-clean conditions out-score plain-star larger surf.
+_SF_QUALITY_CURVE_GOLD = {
+    0: 0.0,
+    1: 4.0,
+    2: 5.5,
+    3: 6.8,
+    4: 7.5,
+    5: 8.2,
+    6: 8.8,
+    7: 9.2,
+    8: 9.6,
+    9: 9.8,
     10: 10.0,
 }
 
@@ -218,18 +235,17 @@ def _clamp_score(value):
     return max(0.0, min(10.0, value))
 
 
-def _sf_quality_score(rating):
+def _sf_quality_score(rating, is_gold_star=False):
     rating = _to_float(rating)
     if rating is None:
         return None
     rating = max(0.0, min(10.0, rating))
+    curve = _SF_QUALITY_CURVE_GOLD if is_gold_star else _SF_QUALITY_CURVE
     lower = int(rating)
     upper = min(10, lower + 1)
     if lower == upper or rating == lower:
-        return _SF_QUALITY_CURVE[lower]
-    lower_score = _SF_QUALITY_CURVE[lower]
-    upper_score = _SF_QUALITY_CURVE[upper]
-    return lower_score + (upper_score - lower_score) * (rating - lower)
+        return curve[lower]
+    return curve[lower] + (curve[upper] - curve[lower]) * (rating - lower)
 
 
 def _blend_inputs(sf_score, om_score, ibi_score=None, gfs_score=None, weights=None):
@@ -1080,6 +1096,8 @@ def _sf_cells(rating_timeline):
             "rating": rating,
             "wind_speed_kmh": cell.get("wind_speed_kmh"),
             "wind_state": cell.get("wind_state"),
+            "sf_star_state": cell.get("sf_star_state"),
+            "sf_is_gold_star": bool(cell.get("sf_is_gold_star")),
         })
     return sorted(cells, key=lambda c: c["dt"])
 
@@ -1126,8 +1144,9 @@ def _score_hour(hour_dt, sf_cells, om_by_hour, spot, level="improver", tide_even
                 gfs_by_hour=None, ibi_by_hour=None):
     sf_cell = _nearest_sf_cell(hour_dt, sf_cells)
     sf_raw = sf_cell.get("rating") if sf_cell else None
+    sf_is_gold = bool(sf_cell.get("sf_is_gold_star")) if sf_cell else False
     tide_effect = _tide_window_effect(hour_dt, tide_events, spot)
-    sf_score = _apply_tide_to_score(_sf_quality_score(sf_raw), tide_effect.get("color"))
+    sf_score = _apply_tide_to_score(_sf_quality_score(sf_raw, is_gold_star=sf_is_gold), tide_effect.get("color"))
     om_row = om_by_hour.get(_hour_key(hour_dt))
     gfs_row = (gfs_by_hour or {}).get(_hour_key(hour_dt))
     ibi_row = (ibi_by_hour or {}).get(_hour_key(hour_dt))
@@ -1155,7 +1174,15 @@ def _score_hour(hour_dt, sf_cells, om_by_hour, spot, level="improver", tide_even
         blocked_by.append(tide_gate.get("source") or "sf_tide")
         if not hard_gate.get("blocked"):
             hard_gate = tide_gate
-    sf_low_rating = require_sf and sf_raw is not None and sf_raw <= 2
+    # Gold-star or model corroboration overrides a low SF rating: a "2-gold"
+    # cell or a "2-white but OM>=5.5" cell is no longer vetoed from top_windows.
+    sf_low_rating = (
+        require_sf
+        and sf_raw is not None
+        and sf_raw <= 2
+        and not sf_is_gold
+        and (om_score is None or om_score < 5.5)
+    )
     if sf_low_rating:
         blocked_by.append("sf_low_rating")
     if require_sf and sf_score is None:

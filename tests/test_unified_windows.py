@@ -37,7 +37,11 @@ def _om_hour(ts, wind_speed=6.0, wind_direction=10.0):
 
 
 class UnifiedWindowScoringTests(unittest.TestCase):
-    def test_sf_rating_two_does_not_become_surfable_from_moderate_om(self):
+    def test_sf_rating_two_passes_when_model_strongly_corroborates(self):
+        # Under doctrine V2 SF gold-star awareness (CLAUDE.md 2026-05): a low SF
+        # cell no longer hard-vetoes a window when OM strongly disagrees. The
+        # gate now needs SF<=2 AND non-gold AND OM<5.5 — clean offshore swell
+        # here makes OM>=5.5 so the window is allowed through.
         sf = [
             _sf_cell("2026-05-01T06:00:00+00:00", 2),
             _sf_cell("2026-05-01T09:00:00+00:00", 2),
@@ -47,6 +51,35 @@ class UnifiedWindowScoringTests(unittest.TestCase):
             _om_hour("2026-05-01T07:00:00+00:00"),
             _om_hour("2026-05-01T08:00:00+00:00"),
             _om_hour("2026-05-01T09:00:00+00:00"),
+        ]
+
+        out = unified.find_next_windows(sf, om, SPOT, "2026-05-01T05:30:00+00:00")
+
+        self.assertIsNotNone(out["best_window"])
+
+    def test_sf_rating_two_still_gates_when_model_also_weak(self):
+        # Companion to the test above: flat swell + bad wind drives OM<5.5,
+        # so the softened gate still fires and the window is suppressed.
+        sf = [
+            _sf_cell("2026-05-01T06:00:00+00:00", 2),
+            _sf_cell("2026-05-01T09:00:00+00:00", 2),
+        ]
+        flat = lambda ts: {
+            "timestamp_utc": ts,
+            "wave_height": 0.15,
+            "wave_period": 5.0,
+            "swell_height": 0.15,
+            "swell_period": 5.0,
+            "swell_direction": 260.0,
+            "wind_wave_height": 0.1,
+            "wind_speed": 25.0,
+            "wind_direction": 190.0,
+        }
+        om = [
+            flat("2026-05-01T06:00:00+00:00"),
+            flat("2026-05-01T07:00:00+00:00"),
+            flat("2026-05-01T08:00:00+00:00"),
+            flat("2026-05-01T09:00:00+00:00"),
         ]
 
         out = unified.find_next_windows(sf, om, SPOT, "2026-05-01T05:30:00+00:00")
@@ -86,6 +119,32 @@ class UnifiedWindowScoringTests(unittest.TestCase):
         out = unified.find_next_windows(sf, om, SPOT, "2026-04-29T17:30:00+00:00")
 
         self.assertIsNone(out["best_window"])
+
+    def test_short_sf_timeline_suppresses_later_model_windows(self):
+        sf = [
+            _sf_cell("2026-05-01T06:00:00+00:00", 6),
+            _sf_cell("2026-05-01T09:00:00+00:00", 6),
+        ]
+        om = [
+            _om_hour(f"2026-05-01T{hour:02d}:00:00+00:00")
+            for hour in range(18, 22)
+        ]
+
+        out = unified.find_next_windows(sf, om, SPOT, "2026-05-01T05:00:00+00:00")
+
+        self.assertIsNone(out["best_window"])
+        self.assertEqual(out["top_windows"], [])
+
+    def test_model_only_windows_appear_when_no_sf_timeline_exists(self):
+        om = [
+            _om_hour(f"2026-05-01T{hour:02d}:00:00+00:00")
+            for hour in range(18, 22)
+        ]
+
+        out = unified.find_next_windows([], om, SPOT, "2026-05-01T05:00:00+00:00")
+
+        self.assertIsNotNone(out["best_window"])
+        self.assertGreaterEqual(len(out["top_windows"]), 1)
 
     def test_red_tide_blocks_otherwise_good_future_window(self):
         sf = [

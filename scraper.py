@@ -321,6 +321,56 @@ def parse_rating_timeline(text, now_utc=None, tz_name=None):
     return {"labeled": labeled, "best_window": best_window}
 
 
+def classify_star_fill(fill, rating):
+    """Classify an SVG `<use fill="...">` value into a Surf-Forecast star state.
+
+    Surf-Forecast varies the gold lightness with rating, so we match by HSL
+    meaning rather than exact string. Returns one of: gold, white, zero, unknown.
+    """
+    if rating == 0:
+        return "zero"
+    if not fill:
+        return "unknown"
+    m = re.search(r'hsl\(\s*([\d.]+)\s*,\s*([\d.]+)%?\s*,\s*([\d.]+)%?\s*\)', fill, re.IGNORECASE)
+    if not m:
+        return "unknown"
+    hue, sat, light = (float(m.group(1)), float(m.group(2)), float(m.group(3)))
+    if 45 <= hue <= 65 and sat >= 80:
+        return "gold"
+    if sat <= 5 and light >= 90:
+        return "white"
+    return "unknown"
+
+
+def parse_rating_star_states(html):
+    """Per-slot star state from the rating row's raw HTML.
+
+    Returns a list of {rating, star_fill, state} dicts ordered the same as
+    `parse_rating_timeline` cells. Empty list if the row can't be located.
+    """
+    row = re.search(
+        r'<tr[^>]*\bdata-row="rating"[^>]*>(.*?)</tr>',
+        html,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not row:
+        return []
+    cells = re.findall(
+        r'<div class="star-rating".*?</div>\s*</div>',
+        row.group(1),
+        re.IGNORECASE | re.DOTALL,
+    )
+    out = []
+    for cell in cells:
+        rating_m = re.search(r'star-rating__rating--(\d+)[^>]*>\s*(\d+)\s*<', cell)
+        fill_m = re.search(r'<use[^>]*\bfill="([^"]+)"', cell, re.IGNORECASE)
+        rating = int(rating_m.group(2)) if rating_m else None
+        fill = fill_m.group(1) if fill_m else None
+        state = classify_star_fill(fill, rating)
+        out.append({"rating": rating, "star_fill": fill, "state": state})
+    return out
+
+
 def pick_best_window(labeled, now_utc=None, min_rating=2):
     """Pick the highest-rated upcoming cell, anchored to UTC `now_utc`.
 
@@ -640,6 +690,11 @@ def scrape(url, tz_name=None):
         if rt.get("best_window"):
             data["best_window"] = rt["best_window"]
         data["rating_timeline"] = rt.get("labeled", [])
+        star_states = parse_rating_star_states(html)
+        for cell, star in zip(data["rating_timeline"], star_states):
+            if star.get("rating") is None or star.get("rating") == cell.get("rating"):
+                cell["sf_star_state"] = star.get("state")
+                cell["sf_is_gold_star"] = star.get("state") == "gold"
 
     tide = parse_tides(text)
     if tide:

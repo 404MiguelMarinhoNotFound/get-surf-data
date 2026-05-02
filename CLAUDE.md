@@ -33,12 +33,29 @@ No database. `spots.json` is the only persistent config. All four sources are fe
 
 | Source | Base weight | Role |
 |---|---:|---|
-| surf-forecast.com (SF) | 0.40 | Local human-curated rating + spot heuristics |
-| Open-Meteo Marine (OM) | 0.30 | Hourly wave/swell partitions + wind/gusts |
-| NOAA GFS Wave (GFS) | 0.20 | Independent global wave + wind model, using the 0.16 degree coastal grid |
-| Copernicus IBI (IBI) | 0.10 | Regional MFWAM wave model, fused with OM wind |
+| surf-forecast.com (SF) | 0.25 | Local human-curated rating + spot heuristics |
+| Open-Meteo Marine (OM) | 0.35 | Hourly wave/swell partitions + wind/gusts |
+| NOAA GFS Wave (GFS) | 0.25 | Independent global wave + wind model, using the 0.16 degree coastal grid |
+| Copernicus IBI (IBI) | 0.15 | Regional MFWAM wave model, fused with OM wind |
 
 Weights renormalize pro-rata when a source is unavailable and adapt slightly per hour when richer fields such as numeric wind, gusts, or complete wave partitions are present. These are temporary reliability priors, not calibrated final weights.
+
+## 2026-05 SF gold-star awareness
+
+Surf-Forecast renders each 3-hour rating cell with a colored SVG star. **Gold** = SF's full predictor stack flags the cell as a strong local fit (right tide/direction/period for the break); **white** = mediocre. The star color is the strongest local-curation tell the page exposes — a "3-gold" is genuinely a good cell, while a "3-white" is just mid-low. Treating both identically caused good model windows to be vetoed when SF gave a low number for spot-curation reasons.
+
+Pipeline:
+
+- [`scraper.parse_rating_star_states(html)`](scraper.py) finds the `<tr data-row="rating">` block and extracts each cell's `<use fill="hsl(...)">` plus `star-rating__rating--N` digit.
+- [`scraper.classify_star_fill(fill, rating)`](scraper.py) classifies by HSL meaning (not exact string — SF varies gold lightness with rating): `hue 45-65 + sat>=80` → `gold`; `sat<=5 + light>=90` → `white`; `rating==0` → `zero`; else `unknown`.
+- `scrape()` merges results into each `rating_timeline` cell as `sf_star_state` and `sf_is_gold_star`. This is **source data**, intentionally distinct from the app's derived `TIER_GOLD` ([`unified_explainer._tier_for_score`](unified_explainer.py)).
+
+Scoring:
+
+- [`unified_explainer._SF_QUALITY_CURVE_GOLD`](unified_explainer.py) is a second curve with a lifted floor. `_sf_quality_score(rating, is_gold_star=False)` picks the curve. Examples — rating 3: plain → 4.8, gold → 6.8. Rating 5: plain → 6.8, gold → 8.2. Rating 2: plain → 3.5, gold → 5.5.
+- The `sf_low_rating` window-eligibility gate now requires SF≤2 **and** non-gold **and** (OM missing or OM<5.5). A "2-gold" cell or a "2-white but OM=7.0" cell is no longer vetoed from `top_windows`. A "2-white with OM=4.0" still gates out.
+
+Source weights were rebalanced from 0.40/0.30/0.20/0.10 to 0.25/0.35/0.25/0.15. SF's *informational* contribution now lives in the curve choice rather than dominating the geometric mean. Geometric blend example with SF=4.8, OM=7.5, GFS=7.0 (no IBI): old ≈ 5.97 → new ≈ 6.34. Same hour with gold-star (SF=6.8): ≈ 7.10.
 
 ## 2026-05 top-5 windows carousel
 

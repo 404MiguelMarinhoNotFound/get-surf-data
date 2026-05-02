@@ -7,24 +7,31 @@ import unified_explainer as ue
 
 class WeightedGeometricTests(unittest.TestCase):
     def test_two_source_uses_geometric_mean(self):
-        # SF=0.40, OM=0.30; only two sources present.
+        # SF=0.25, OM=0.35; only two sources present.
         result = ue._weighted_geometric(8.0, 6.0, None)
-        sf_w = 0.40 / 0.70
-        om_w = 0.30 / 0.70
+        total = ue.SF_WEIGHT + ue.OM_WEIGHT
+        sf_w = ue.SF_WEIGHT / total
+        om_w = ue.OM_WEIGHT / total
         expected = 10.0 * ((8.0 / 10.0) ** sf_w) * ((6.0 / 10.0) ** om_w)
         self.assertAlmostEqual(result, expected, places=4)
 
     def test_three_source_blend_renormalizes_current_base_weights(self):
         result = ue._weighted_geometric(8.0, 6.0, 7.0)
-        sf_w = 0.40 / 0.80
-        om_w = 0.30 / 0.80
-        ibi_w = 0.10 / 0.80
+        total = ue.SF_WEIGHT + ue.OM_WEIGHT + ue.IBI_WEIGHT
+        sf_w = ue.SF_WEIGHT / total
+        om_w = ue.OM_WEIGHT / total
+        ibi_w = ue.IBI_WEIGHT / total
         expected = 10.0 * ((8.0 / 10.0) ** sf_w) * ((6.0 / 10.0) ** om_w) * ((7.0 / 10.0) ** ibi_w)
         self.assertAlmostEqual(result, expected, places=4)
 
     def test_four_source_blend(self):
         result = ue._weighted_geometric(8.0, 6.0, 5.0, gfs_score=7.0)
-        expected = 10.0 * (0.8 ** 0.40) * (0.6 ** 0.30) * (0.7 ** 0.20) * (0.5 ** 0.10)
+        expected = 10.0 * (
+            (0.8 ** ue.SF_WEIGHT)
+            * (0.6 ** ue.OM_WEIGHT)
+            * (0.7 ** ue.GFS_WEIGHT)
+            * (0.5 ** ue.IBI_WEIGHT)
+        )
         self.assertAlmostEqual(result, expected, places=4)
 
     def test_all_none_returns_none(self):
@@ -36,14 +43,20 @@ class WeightedGeometricTests(unittest.TestCase):
 
     def test_zero_score_uses_epsilon_not_total_collapse(self):
         result = ue._weighted_geometric(8.0, 0.0, 7.0)
-        expected = 10.0 * (0.8 ** (0.40 / 0.80)) * (0.05 ** (0.30 / 0.80)) * (0.7 ** (0.10 / 0.80))
+        total = ue.SF_WEIGHT + ue.OM_WEIGHT + ue.IBI_WEIGHT
+        expected = 10.0 * (
+            (0.8 ** (ue.SF_WEIGHT / total))
+            * (0.05 ** (ue.OM_WEIGHT / total))
+            * (0.7 ** (ue.IBI_WEIGHT / total))
+        )
         self.assertAlmostEqual(result, expected, places=4)
         self.assertGreater(result, 0.0)
 
     def test_renormalization_when_model_sources_missing(self):
         result = ue._weighted_geometric(8.0, None, 6.0)
-        sf_w = 0.40 / 0.50
-        ibi_w = 0.10 / 0.50
+        total = ue.SF_WEIGHT + ue.IBI_WEIGHT
+        sf_w = ue.SF_WEIGHT / total
+        ibi_w = ue.IBI_WEIGHT / total
         expected = 10.0 * ((8.0 / 10.0) ** sf_w) * ((6.0 / 10.0) ** ibi_w)
         self.assertAlmostEqual(result, expected, places=4)
 

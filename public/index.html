@@ -1918,8 +1918,15 @@ function renderSourcesLine(data) {
   if (!u || !u.source_scores) return '';
   const s = u.source_scores;
   const w = u.weights || {};
-  const labels = {sf: 'Surf-Forecast', om: 'Open-Meteo', gfs: 'NOAA GFS', ibi: 'Copernicus IBI'};
-  const parts = ['sf', 'om', 'gfs', 'ibi']
+  const labels = {
+    sf: 'Surf-Forecast',
+    surfline: 'Surfline',
+    windguru: 'Windguru',
+    om: 'Open-Meteo',
+    gfs: 'NOAA GFS',
+    ibi: 'Copernicus IBI'
+  };
+  const parts = ['sf', 'surfline', 'windguru', 'om', 'gfs', 'ibi']
     .filter(k => s[k] != null)
     .map(k => `<span class="source-chip"><strong>${escapeHtml(labels[k])}</strong> ${s[k]}/10 <em>w=${(((w[k] || 0)*100)).toFixed(0)}%</em></span>`);
   if (!parts.length) return '';

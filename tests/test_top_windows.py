@@ -100,5 +100,63 @@ class TopWindowsTests(unittest.TestCase):
             self.assertIsNone(out["best_window"])
 
 
+class RequireSfTimelineTests(unittest.TestCase):
+    """SF timeline only covers ~3 days; hours beyond it must not be blocked."""
+
+    def _good_om_hour(self, ts):
+        return {
+            "timestamp_utc": ts,
+            "wave_height": 1.4,
+            "wave_period": 13.0,
+            "swell_height": 1.3,
+            "swell_period": 13.0,
+            "swell_direction": 260.0,
+            "wind_wave_height": 0.05,
+            "wind_speed": 7.0,
+            "wind_direction": 10.0,
+        }
+
+    def test_post_sf_timeline_hours_appear_in_windows(self):
+        # SF cells: day 1-3 only (24 cells at 3h intervals)
+        sf = []
+        for day in range(3):
+            from datetime import date, timedelta
+            d = date(2026, 5, 1) + timedelta(days=day)
+            for h in (6, 9, 12, 15, 18, 21):
+                sf.append(_sf_cell(f"{d.isoformat()}T{h:02d}:00:00+00:00", 4))
+
+        # OM data only for day 6 (well past SF timeline)
+        om = [self._good_om_hour(f"2026-05-07T{h:02d}:00:00+00:00") for h in range(6, 20)]
+
+        out = unified.find_next_windows(sf, om, SPOT, "2026-04-30T23:00:00+00:00")
+        starts = [w["starts_at"] for w in out["top_windows"]]
+        has_day6 = any(s.startswith("2026-05-07") for s in starts)
+        self.assertTrue(has_day6, f"Expected a May-7 window past SF timeline, got: {starts}")
+
+    def test_supplementary_source_gap_does_not_veto_window(self):
+        # SF + OM both say good; Surfline rows have no wave data (score will be None).
+        # Two consecutive good hours are needed to form a window (min_hours=2).
+        sf = [
+            _sf_cell("2026-05-01T06:00:00+00:00", 5),
+            _sf_cell("2026-05-01T09:00:00+00:00", 5),
+        ]
+        om = [
+            self._good_om_hour("2026-05-01T07:00:00+00:00"),
+            self._good_om_hour("2026-05-01T08:00:00+00:00"),
+        ]
+        # Surfline rows with empty/missing fields — _score_model_row returns None.
+        surfline_hourly = [
+            {"timestamp_utc": "2026-05-01T07:00:00+00:00"},
+            {"timestamp_utc": "2026-05-01T08:00:00+00:00"},
+        ]
+
+        out = unified.find_next_windows(
+            sf, om, SPOT, "2026-05-01T05:00:00+00:00",
+            surfline_hourly=surfline_hourly,
+        )
+        self.assertGreater(len(out["top_windows"]), 0,
+                           "Window should not be vetoed by Surfline rows with no score")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1452,14 +1452,13 @@ def _score_hour(hour_dt, sf_cells, om_by_hour, spot, level="improver", tide_even
         gfs_score=gfs_score,
         weights=weights,
     )
+    # Supplementary sources (surfline, windguru, gfs, ibi) scoring None just
+    # means that source is excluded from the blend for this hour — it does not
+    # veto the window. Only SF and OM gaps are load-bearing for eligibility.
     window_eligible = (
         not (require_sf and sf_score is None)
         and not sf_low_rating
         and not (om_row is not None and om_score is None)
-        and not (surfline_row is not None and surfline_score is None)
-        and not (windguru_row is not None and windguru_score is None)
-        and not (gfs_row is not None and gfs_score is None)
-        and not (ibi_row is not None and ibi_score is None)
     )
     tier = _tier_for_score(decider_score, hard_gate, has_om=bool(available - {"sf"}))
     return {

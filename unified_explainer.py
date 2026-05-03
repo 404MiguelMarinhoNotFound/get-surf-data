@@ -1880,9 +1880,9 @@ def find_next_windows(rating_timeline, om_hourly, spot, sf_now_utc, tide=None,
     tide_events = tide.get("events") if isinstance(tide, dict) else tide
 
     scored = []
+    sf_timeline_end = (sf_cells[-1]["dt"] + timedelta(hours=3)) if sf_cells else None
     model_hours = sorted(set(surfline_hours) | set(windguru_hours) | set(om_hours) | set(gfs_hours) | set(ibi_hours))
     if model_hours:
-        require_sf = bool(sf_cells)
         for hour_dt in model_hours:
             if hour_dt < now_dt.replace(minute=0, second=0, microsecond=0):
                 continue
@@ -1891,6 +1891,7 @@ def find_next_windows(rating_timeline, om_hourly, spot, sf_now_utc, tide=None,
             local_hour = _local_dt(hour_dt, spot).hour
             if local_hour >= 20 or local_hour < 5:
                 continue
+            require_sf = bool(sf_cells) and sf_timeline_end is not None and hour_dt <= sf_timeline_end
             row = _score_hour(
                 hour_dt,
                 sf_cells,

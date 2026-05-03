@@ -15,6 +15,8 @@ import copernicus_ibi
 import copernicus_ibi_explainer
 import noaa_gfs
 import noaa_gfs_explainer
+import surfline
+import windguru
 
 ROOT = Path(__file__).resolve().parent.parent
 SPOTS = json.loads((ROOT / "spots.json").read_text(encoding="utf-8"))
@@ -33,13 +35,35 @@ def _sync_spot(spot_id, level=explainer.DEFAULT_LEVEL):
         level = explainer.DEFAULT_LEVEL
 
     sf_result, om_result, gfs_result, ibi_result = [None], [None], [None], [None]
+    surfline_result, windguru_result = [None], [None]
     sf_error, om_error, gfs_error, ibi_error = [None], [None], [None], [None]
+    surfline_error, windguru_error = [None], [None]
 
     def fetch_sf():
         try:
             sf_result[0] = scraper.scrape(spot["url"], tz_name=spot.get("tz"))
         except Exception as e:
             sf_error[0] = str(e)
+
+    def fetch_surfline():
+        sl_id = spot.get("surfline_spot_id")
+        if not sl_id:
+            surfline_error[0] = "No Surfline spot id configured"
+            return
+        try:
+            surfline_result[0] = surfline.fetch(sl_id, source_url=spot.get("surfline_url"))
+        except Exception as e:
+            surfline_error[0] = str(e)
+
+    def fetch_windguru():
+        wg_id = spot.get("windguru_spot_id")
+        if not wg_id:
+            windguru_error[0] = "No Windguru spot id configured"
+            return
+        try:
+            windguru_result[0] = windguru.fetch(wg_id)
+        except Exception as e:
+            windguru_error[0] = str(e)
 
     def fetch_om():
         lat, lon = spot.get("lat"), spot.get("lon")
@@ -75,6 +99,8 @@ def _sync_spot(spot_id, level=explainer.DEFAULT_LEVEL):
 
     threads = [
         threading.Thread(target=fetch_sf),
+        threading.Thread(target=fetch_surfline),
+        threading.Thread(target=fetch_windguru),
         threading.Thread(target=fetch_om),
         threading.Thread(target=fetch_gfs),
         threading.Thread(target=fetch_ibi),
@@ -85,6 +111,8 @@ def _sync_spot(spot_id, level=explainer.DEFAULT_LEVEL):
     threads[1].join(timeout=15)
     threads[2].join(timeout=15)
     threads[3].join(timeout=15)
+    threads[4].join(timeout=15)
+    threads[5].join(timeout=15)
 
     if sf_error[0] or sf_result[0] is None:
         return {
@@ -123,6 +151,28 @@ def _sync_spot(spot_id, level=explainer.DEFAULT_LEVEL):
         data["om_error"] = om_error[0] or "Open-Meteo fetch failed"
 
     om_hourly = om_result[0].get("hourly", []) if om_result[0] else []
+
+    # Merge Surfline analysis.
+    if surfline_result[0] and not surfline_error[0]:
+        data["surfline_analysis"] = surfline_result[0].get("current")
+        data["surfline_hourly"] = surfline_result[0].get("hourly", [])
+        data["surfline_error"] = None
+    else:
+        data["surfline_analysis"] = None
+        data["surfline_hourly"] = []
+        data["surfline_error"] = surfline_error[0] or "Surfline fetch failed"
+
+    # Merge Windguru analysis.
+    if windguru_result[0] and not windguru_error[0]:
+        data["windguru_analysis"] = windguru_result[0].get("current")
+        data["windguru_hourly"] = windguru_result[0].get("hourly", [])
+        data["windguru_error"] = None
+        if windguru_result[0].get("sst_c") is not None:
+            data["windguru_sst_c"] = windguru_result[0].get("sst_c")
+    else:
+        data["windguru_analysis"] = None
+        data["windguru_hourly"] = []
+        data["windguru_error"] = windguru_error[0] or "Windguru fetch failed"
 
     # Merge NOAA GFS analysis (independent wave + wind model).
     if gfs_result[0] and not gfs_error[0]:
@@ -164,6 +214,10 @@ def _sync_spot(spot_id, level=explainer.DEFAULT_LEVEL):
         ibi_analysis=data.get("ibi_analysis"),
         gfs_analysis=data.get("gfs_analysis"),
         gfs_hourly=gfs_hourly,
+        surfline_analysis=data.get("surfline_analysis"),
+        surfline_hourly=data.get("surfline_hourly"),
+        windguru_analysis=data.get("windguru_analysis"),
+        windguru_hourly=data.get("windguru_hourly"),
     )
 
     return data

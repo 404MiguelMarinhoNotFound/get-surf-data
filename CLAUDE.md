@@ -1,6 +1,6 @@
 # Lineup - surf forecast app
 
-A personal surf conditions tool for Carcavelos and Costa da Caparica | Praia do CDS (Lisbon area). Blends four data sources - surf-forecast.com (scraped), Open-Meteo Marine, NOAA GFS Wave, and Copernicus Marine IBI - through the doctrine V2 geometric suitability engine, then serves a dark-mode single-page frontend. Stdlib Python only.
+A personal surf conditions tool for Carcavelos and Costa da Caparica | Praia do CDS (Lisbon area). Blends six data sources — surf-forecast.com (scraped), Surfline (LOLA model + forecaster ratings), Open-Meteo Marine, NOAA GFS Wave, Copernicus Marine IBI, and Windguru (GFS-backed) — through the doctrine V2 geometric suitability engine, then serves a dark-mode single-page frontend. Stdlib Python only.
 
 ## Live deployment
 
@@ -19,6 +19,8 @@ noaa_gfs.py                   - NOAA GFS Wave + GFS wind client
 noaa_gfs_explainer.py         - GFS scorer (reuses OM graders)
 copernicus_ibi.py             - Copernicus Marine IBI WMS client (auth req'd)
 copernicus_ibi_explainer.py   - IBI scorer (reuses OM graders)
+surfline.py                   - Surfline JSON API client (wave/wind/tide + condition ratings)
+windguru.py                   - Windguru micro.windguru.cz plaintext parser (GFS-backed)
 unified_explainer.py          - N-source geometric blend, confidence, hard gates + windowing
 server.py                     - local dev server (port 8765)
 api/spots.py                  - Vercel serverless: GET /api/spots
@@ -27,7 +29,7 @@ public/index.html             - single-file frontend (vanilla JS)
 spots.json                    - spot config
 ```
 
-No database. `spots.json` is the only persistent config. All four sources are fetched in parallel on each request; Vercel CDN caches responses for 60 seconds (`s-maxage=60`).
+No database. `spots.json` is the only persistent config. All six sources are fetched in parallel on each request; Vercel CDN caches responses for 60 seconds (`s-maxage=60`).
 
 ## Data sources & blend weights
 
@@ -35,10 +37,14 @@ No database. `spots.json` is the only persistent config. All four sources are fe
 |---|---:|---|
 | surf-forecast.com (SF) | 0.25 | Local human-curated rating + spot heuristics |
 | Open-Meteo Marine (OM) | 0.35 | Hourly wave/swell partitions + wind/gusts |
-| NOAA GFS Wave (GFS) | 0.25 | Independent global wave + wind model, using the 0.16 degree coastal grid |
-| Copernicus IBI (IBI) | 0.15 | Regional MFWAM wave model, fused with OM wind |
+| NOAA GFS Wave (GFS) | 0.20 | Independent global wave + wind model, using the 0.16 degree coastal grid |
+| Copernicus IBI (IBI) | 0.05 | Regional MFWAM wave model, fused with OM wind |
+| Surfline | 0.10 | LOLA model wave/wind rows + local forecaster condition ratings |
+| Windguru | 0.05 | GFS-backed wind/wave display layer (UX consistency hedge; correlated with GFS) |
 
 Weights renormalize pro-rata when a source is unavailable and adapt slightly per hour when richer fields such as numeric wind, gusts, or complete wave partitions are present. These are temporary reliability priors, not calibrated final weights.
+
+Note: Windguru fetches `m=gfs`/`m=gfswh` from micro.windguru.cz — the same NOAA GFS model as source 3. It is intentionally low-weight to avoid double-counting GFS. Its main value is that it mirrors what you see at windguru.cz, keeping app scores consistent with the site. If you want a genuinely independent signal, switch `windguru.py` to `m=ecmwf` or `m=iconeu` (verify free-tier availability first).
 
 ## 2026-05 SF gold-star awareness
 
@@ -52,10 +58,42 @@ Pipeline:
 
 Scoring:
 
-- [`unified_explainer._SF_QUALITY_CURVE_GOLD`](unified_explainer.py) is a second curve with a lifted floor. `_sf_quality_score(rating, is_gold_star=False)` picks the curve. Examples — rating 3: plain → 4.8, gold → 6.8. Rating 5: plain → 6.8, gold → 8.2. Rating 2: plain → 3.5, gold → 5.5.
-- The `sf_low_rating` window-eligibility gate now requires SF≤2 **and** non-gold **and** (OM missing or OM<5.5). A "2-gold" cell or a "2-white but OM=7.0" cell is no longer vetoed from `top_windows`. A "2-white with OM=4.0" still gates out.
+- [`unified_explainer._SF_QUALITY_CURVE_GOLD`](unified_explainer.py) is a second curve with a lifted floor. `_sf_quality_score(rating, is_gold_star, surfline_tier, surfline_source)` picks the curve. Examples — rating 3: plain → 4.8, gold → 6.8, super-gold → 7.5, dampened → 3.5. Rating 5: plain → 6.8, gold → 8.2. Rating 2: plain → 3.5, gold → 5.5.
+- The `sf_low_rating` window-eligibility gate requires SF≤2 **and** non-gold **and** no Surfline-forecaster rescue **and** (OM missing or OM<5.5). A "2-gold" cell, a "2-white but OM=7.0" cell, or a "2-white but Surfline forecaster says GOOD/EPIC" cell is no longer vetoed from `top_windows`. A "2-white with OM=4.0 and no forecaster rescue" still gates out. Note: Surfline LOTUS-only ratings (model-generated) do NOT rescue the gate — only a human-forecaster-assigned GOOD or EPIC does. At Carcavelos/Caparica these are rare.
 
-Source weights were rebalanced from 0.40/0.30/0.20/0.10 to 0.25/0.35/0.25/0.15. SF's *informational* contribution now lives in the curve choice rather than dominating the geometric mean. Geometric blend example with SF=4.8, OM=7.5, GFS=7.0 (no IBI): old ≈ 5.97 → new ≈ 6.34. Same hour with gold-star (SF=6.8): ≈ 7.10.
+Source weights were rebalanced from 0.25/0.35/0.25/0.15 (4-source era) to 0.25/0.35/0.20/0.05/0.10/0.05 (6-source, sum=1.00). SF's *informational* contribution now lives mainly in the curve choice; OM remains the highest-weight model source.
+
+## 2026-05 Surfline + Windguru integration
+
+Surfline and Windguru are wired into both the local dev server ([`server.py`](server.py)) and the Vercel serverless endpoint ([`api/sync.py`](api/sync.py)).
+
+**`spots.json` fields required:** `surfline_spot_id` (the hex ID from the Surfline URL) and `windguru_spot_id` (the numeric station ID).
+
+### Surfline — adaptive curation layer
+
+Surfline's most valuable signal is its **condition rating**, not its wave/wind numbers. Surfline has 7 rating tiers — VERY POOR / POOR / POOR TO FAIR / FAIR / FAIR TO GOOD / GOOD / EPIC — generated by their LOTUS swell model (hourly, height+wind only). GOOD and EPIC are always **forecaster-assigned** and cannot be produced by LOTUS.
+
+Key limitation at our spots: Carcavelos and Costa da Caparica are minor breaks, almost certainly without regular Surfline forecaster observations. In practice, all ratings received will be LOTUS-generated — meaning they miss tide, swell direction, and spot dynamics. LOTUS ratings are treated as a weak curation signal.
+
+**`surfline.py` exposes:**
+- `condition_rating` — normalized 7-tier label (was previously missing VERY POOR and FAIR TO GOOD; now correct)
+- `surfline_rating_source` — `"forecaster"` or `"model"`. GOOD/EPIC always map to `"forecaster"`. Other labels try attribution fields in the report JSON; fallback is `"model"`.
+- `surfline_optimal_score` — per-hour 0–5 integer in hourly rows (always `source="model"`, maxes at `FAIR TO GOOD`)
+
+**Adaptive curation curve** ([`unified_explainer._sf_quality_score`](unified_explainer.py)):
+
+The curve picked for a given SF rating cell now depends on `(sf_is_gold, surfline_tier, surfline_source)`. Model-sourced Surfline tiers are down-shifted by one level (e.g., model GOOD → `fair_plus`) so LOTUS cannot authorize the strongest curve lifts. Four curves now exist:
+
+| Curve | When used |
+|---|---|
+| `_SF_QUALITY_CURVE_SUPER` | SF gold + Surfline forecaster GOOD/EPIC, or plain + forecaster EPIC |
+| `_SF_QUALITY_CURVE_GOLD` | SF gold (no Surfline), or plain + forecaster GOOD, or gold + forecaster FAIR_TO_GOOD |
+| `_SF_QUALITY_CURVE` | SF plain with neutral/missing Surfline, or gold + poor Surfline |
+| `_SF_QUALITY_CURVE_DAMPENED` | SF plain + Surfline `poor` (both forecasters say bad local fit) |
+
+### Windguru — low-weight GFS hedge
+
+Windguru fetches from `micro.windguru.cz/?m=gfs` and `m=gfswh` — literally the same NOAA GFS run as `noaa_gfs.py`. It is intentionally weighted at 0.05 to avoid double-counting GFS while keeping app scores numerically consistent with what you see on windguru.cz. The `_WINDGURU_HARD_GATE_LABELS` set is empty; Windguru never triggers hard gates. If you want Windguru to add genuine independent signal, change `windguru.py` to use `m=ecmwf` or `m=iconeu` and verify those are available on the free micro endpoint.
 
 ## 2026-05 top-5 windows carousel
 

@@ -627,6 +627,223 @@
     font-weight: 600;
     color: var(--text);
   }
+  .hero-predictor {
+    margin-top: 0.85rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(148,163,184,0.14);
+  }
+  .hero-predictor-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.55rem;
+  }
+  .hero-predictor-title {
+    font-size: 0.64rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    font-weight: 800;
+  }
+  .hero-predictor-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.66rem;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .hero-predictor-track {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(44px, 1fr);
+    gap: 0.35rem;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    padding: 0.1rem 0 0.45rem;
+  }
+  .hero-predictor-track::-webkit-scrollbar { height: 7px; }
+  .hero-predictor-track::-webkit-scrollbar-thumb {
+    background: rgba(125, 211, 252, 0.18);
+    border-radius: 999px;
+  }
+  .hero-predictor-bar {
+    min-width: 0;
+    height: 72px;
+    padding: 0.32rem 0.28rem;
+    display: grid;
+    grid-template-rows: 1fr auto;
+    gap: 0.2rem;
+    align-items: stretch;
+    cursor: pointer;
+    touch-action: manipulation;
+    border: 1px solid rgba(125, 211, 252, 0.14);
+    border-radius: 8px;
+    background: rgba(2, 6, 23, 0.24);
+    color: var(--text-dim);
+    position: relative;
+    scroll-snap-align: start;
+    transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+  }
+  .hero-predictor-bar:hover,
+  .hero-predictor-bar:focus-visible {
+    border-color: rgba(125, 211, 252, 0.38);
+    background: rgba(2, 6, 23, 0.36);
+    box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.10);
+  }
+  .hero-predictor-bar[aria-pressed="true"] {
+    border-color: rgba(125, 211, 252, 0.54);
+    box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.18), inset 0 1px 0 rgba(255,255,255,0.07);
+  }
+  .hero-predictor-meter {
+    min-height: 0;
+    display: grid;
+    align-items: end;
+    border-radius: 6px;
+    overflow: hidden;
+    background: rgba(15, 42, 67, 0.56);
+  }
+  .hero-predictor-fill {
+    height: max(4px, var(--score-pct, 0%));
+    border-radius: 6px 6px 0 0;
+    box-shadow: 0 0 16px rgba(148, 163, 184, 0.18);
+  }
+  .hero-predictor-fill[data-tier="gold"] {
+    background: linear-gradient(180deg, var(--yellow-bright), rgba(251,191,36,0.50));
+    box-shadow: 0 0 18px rgba(251,191,36,0.34);
+  }
+  .hero-predictor-fill[data-tier="green"] {
+    background: linear-gradient(180deg, var(--green-bright), rgba(16,185,129,0.48));
+    box-shadow: 0 0 16px rgba(16,185,129,0.28);
+  }
+  .hero-predictor-fill[data-tier="surfable"] {
+    background: linear-gradient(180deg, var(--accent-bright), rgba(34,211,238,0.42));
+    box-shadow: 0 0 16px rgba(34,211,238,0.24);
+  }
+  .hero-predictor-fill[data-tier="low"] {
+    background: linear-gradient(180deg, rgba(148,163,184,0.58), rgba(100,116,139,0.30));
+    box-shadow: none;
+  }
+  .hero-predictor-labels {
+    display: grid;
+    gap: 0.02rem;
+    min-width: 0;
+    text-align: center;
+    line-height: 1.05;
+  }
+  .hero-predictor-day,
+  .hero-predictor-time {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .hero-predictor-day {
+    font-size: 0.58rem;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+  }
+  .hero-predictor-time {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.62rem;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .hero-predictor-tooltip {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 0.45rem);
+    width: min(230px, 72vw);
+    padding: 0.55rem 0.6rem;
+    border-radius: 8px;
+    background: rgba(2, 6, 23, 0.96);
+    border: 1px solid rgba(125, 211, 252, 0.24);
+    color: var(--text-dim);
+    box-shadow: 0 18px 42px -24px rgba(2, 6, 23, 0.95);
+    font-size: 0.68rem;
+    line-height: 1.35;
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, 4px);
+    transition: opacity 0.16s ease, transform 0.16s var(--ease);
+    z-index: 25;
+  }
+  .hero-predictor-tooltip strong {
+    display: block;
+    color: var(--text);
+    margin-bottom: 0.08rem;
+  }
+  .hero-predictor-bar:hover .hero-predictor-tooltip,
+  .hero-predictor-bar:focus-visible .hero-predictor-tooltip {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  .hero-predictor-detail {
+    margin-top: 0.55rem;
+    padding: 0.7rem 0.75rem;
+    border-radius: 10px;
+    border: 1px solid rgba(125, 211, 252, 0.16);
+    background:
+      linear-gradient(135deg, rgba(6, 182, 212, 0.08), rgba(2, 6, 23, 0.18)),
+      rgba(2, 6, 23, 0.26);
+  }
+  .hero-predictor-detail-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.65rem;
+    align-items: flex-start;
+  }
+  .hero-predictor-detail-time {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 0.92rem;
+    line-height: 1.2;
+    font-weight: 800;
+    color: var(--text);
+  }
+  .hero-predictor-detail-score {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    font-weight: 800;
+    white-space: nowrap;
+    color: var(--accent-bright);
+  }
+  .hero-predictor-detail-score[data-tier="gold"] { color: var(--yellow-bright); }
+  .hero-predictor-detail-score[data-tier="green"] { color: var(--green-bright); }
+  .hero-predictor-detail-score[data-tier="low"] { color: var(--text-dim); }
+  .hero-predictor-detail-reason {
+    margin-top: 0.25rem;
+    font-size: 0.72rem;
+    line-height: 1.38;
+    color: var(--text-dim);
+  }
+  .hero-predictor-chips {
+    margin-top: 0.55rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.28rem;
+  }
+  .hero-predictor-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    min-height: 1.35rem;
+    padding: 0.2rem 0.42rem;
+    border-radius: 999px;
+    border: 1px solid rgba(148,163,184,0.18);
+    background: rgba(15, 42, 67, 0.36);
+    color: var(--text-dim);
+    font-size: 0.66rem;
+    line-height: 1.1;
+  }
+  .hero-predictor-chip strong {
+    color: var(--text);
+    font-weight: 700;
+  }
+  .hero-predictor-chip.is-blocked {
+    border-color: rgba(248,113,113,0.22);
+    color: var(--red-bright);
+  }
   .hero-toggle-details {
     margin-top: 0.65rem;
     background: none;
@@ -1000,6 +1217,8 @@
     .hero-headline { font-size: 1.25rem; }
     .hero-window { grid-template-columns: 1fr; }
     .hero-window-score { justify-self: start; }
+    .hero-predictor-track { grid-auto-columns: minmax(40px, 46px); }
+    .hero-predictor-detail-top { display: grid; }
     .hero-score-tooltip {
       left: 0;
       right: auto;
@@ -1024,7 +1243,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     body::before { animation: none; }
-    .card, .verdict, .site-credit-link, .site-credit-link::before, .site-credit-text { animation: none !important; transition: none !important; }
+    .card, .verdict, .site-credit-link, .site-credit-link::before, .site-credit-text, .hero-predictor-bar, .hero-predictor-tooltip { animation: none !important; transition: none !important; }
     .card:hover { transform: none; }
     .live-dot { animation: none; box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.16); }
     .spinner { animation-duration: 1.4s; }
@@ -1059,6 +1278,7 @@
   @media (hover: none) {
     .card:hover { transform: none; box-shadow: var(--shadow-card); border-color: var(--glass-border); }
     .rating-cell:hover { transform: none; }
+    .hero-predictor-tooltip { display: none; }
   }
 
   /* Landscape phones with short viewports */
@@ -2043,6 +2263,188 @@ function renderHeroWindowCarousel(windows, index, currentWindowText) {
   </div>`;
 }
 
+function predictorTier(score) {
+  const value = Number(score);
+  if (Number.isFinite(value) && value >= 7.5) return 'gold';
+  if (Number.isFinite(value) && value >= 6.2) return 'green';
+  if (Number.isFinite(value) && value >= 5.0) return 'surfable';
+  return 'low';
+}
+
+function predictorTierLabel(tier) {
+  return {
+    gold: 'excellent',
+    green: 'good',
+    surfable: 'surfable',
+    low: 'low'
+  }[tier] || 'low';
+}
+
+function predictorDisplayParts(win) {
+  const label = String((win && win.label) || '');
+  const firstSpace = label.indexOf(' ');
+  if (firstSpace === -1) return { day: label || 'Window', time: '' };
+  const day = label.slice(0, firstSpace);
+  const range = label.slice(firstSpace + 1);
+  const compactRange = range.replace(/:00/g, '');
+  return { day, time: compactRange };
+}
+
+function predictorScoreText(score) {
+  const value = Number(score);
+  return Number.isFinite(value) ? `${value.toFixed(1)}/10` : '--/10';
+}
+
+function predictorScorePct(score) {
+  const value = Number(score);
+  if (!Number.isFinite(value)) return 6;
+  return Math.max(6, Math.min(100, value * 10));
+}
+
+function sourceAverage(components, key) {
+  const values = (components || [])
+    .map(component => Number(component && component[key]))
+    .filter(Number.isFinite);
+  if (!values.length) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+const PREDICTOR_SOURCE_LABELS = [
+  ['sf_score', 'SF'],
+  ['surfline_score', 'Surfline'],
+  ['windguru_score', 'Windguru'],
+  ['om_score', 'OM'],
+  ['gfs_score', 'GFS'],
+  ['ibi_score', 'IBI']
+];
+
+function predictorSourceChips(win) {
+  const components = Array.isArray(win && win.score_components) ? win.score_components : [];
+  return PREDICTOR_SOURCE_LABELS
+    .map(([key, label]) => {
+      const avg = sourceAverage(components, key);
+      if (avg == null) return '';
+      return `<span class="hero-predictor-chip"><strong>${escapeHtml(label)}</strong> ${avg.toFixed(1)}</span>`;
+    })
+    .join('');
+}
+
+function predictorFactorChips(win) {
+  const components = Array.isArray(win && win.score_components) ? win.score_components : [];
+  const sourceOrder = ['om', 'gfs', 'surfline', 'windguru', 'ibi'];
+  const factorOrder = ['height', 'period', 'wind', 'chop', 'direction', 'tide'];
+  let factors = null;
+
+  for (const component of components) {
+    const factorScores = component && component.factor_scores;
+    if (!factorScores || typeof factorScores !== 'object') continue;
+    for (const source of sourceOrder) {
+      if (factorScores[source] && typeof factorScores[source] === 'object') {
+        factors = factorScores[source];
+        break;
+      }
+    }
+    if (factors) break;
+  }
+
+  if (!factors) return '';
+  return factorOrder
+    .map(key => {
+      const value = Number(factors[key]);
+      if (!Number.isFinite(value)) return '';
+      return `<span class="hero-predictor-chip"><strong>${escapeHtml(key)}</strong> ${value.toFixed(2)}</span>`;
+    })
+    .join('');
+}
+
+function predictorTideLabel(win) {
+  const components = Array.isArray(win && win.score_components) ? win.score_components : [];
+  const tide = components.find(component => component && component.tide);
+  return tide && tide.tide ? tide.tide : '';
+}
+
+function predictorAriaLabel(win) {
+  const tier = predictorTier(win && win.score);
+  const value = Number(win && win.score);
+  const score = Number.isFinite(value) ? value.toFixed(1) : 'unknown';
+  const blocked = Array.isArray(win && win.blocked_by) && win.blocked_by.length
+    ? `, blocked by ${win.blocked_by.join(', ')}`
+    : '';
+  return `${(win && win.label) || 'Surf window'}, score ${score} out of 10, ${predictorTierLabel(tier)} rating${blocked}`;
+}
+
+function renderPredictorBar(win, idx, selected) {
+  const tier = predictorTier(win && win.score);
+  const parts = predictorDisplayParts(win);
+  const scoreText = predictorScoreText(win && win.score);
+  const scorePct = predictorScorePct(win && win.score);
+  const reason = (win && win.reason) || '';
+  const tooltip = `<span class="hero-predictor-tooltip" role="tooltip">
+    <strong>${escapeHtml((win && win.label) || 'Surf window')} - ${escapeHtml(scoreText)}</strong>
+    ${escapeHtml(reason || predictorTierLabel(tier))}
+  </span>`;
+
+  return `<button class="hero-predictor-bar" type="button" data-index="${idx}" aria-pressed="${selected ? 'true' : 'false'}" aria-label="${escapeHtml(predictorAriaLabel(win))}">
+    <span class="hero-predictor-meter" aria-hidden="true">
+      <span class="hero-predictor-fill" data-tier="${escapeHtml(tier)}" style="--score-pct: ${scorePct.toFixed(0)}%"></span>
+    </span>
+    <span class="hero-predictor-labels" aria-hidden="true">
+      <span class="hero-predictor-day">${escapeHtml(parts.day)}</span>
+      <span class="hero-predictor-time">${escapeHtml(parts.time)}</span>
+    </span>
+    ${tooltip}
+  </button>`;
+}
+
+function renderPredictorDetail(win) {
+  if (!win) return '';
+  const tier = predictorTier(win.score);
+  const confidence = win.confidence ? `<span class="hero-predictor-chip"><strong>confidence</strong> ${escapeHtml(win.confidence)}</span>` : '';
+  const detail = win.confidence_detail || {};
+  const sourceCount = Number.isFinite(Number(detail.source_count))
+    ? `<span class="hero-predictor-chip"><strong>sources</strong> ${escapeHtml(detail.source_count)}</span>`
+    : '';
+  const missing = Array.isArray(detail.missing_sources) && detail.missing_sources.length
+    ? `<span class="hero-predictor-chip"><strong>missing</strong> ${escapeHtml(detail.missing_sources.slice(0, 3).join(', '))}${detail.missing_sources.length > 3 ? '...' : ''}</span>`
+    : '';
+  const tide = predictorTideLabel(win);
+  const tideChip = tide ? `<span class="hero-predictor-chip"><strong>tide</strong> ${escapeHtml(tide)}</span>` : '';
+  const blocked = Array.isArray(win.blocked_by) && win.blocked_by.length
+    ? `<span class="hero-predictor-chip is-blocked"><strong>blocked</strong> ${escapeHtml(win.blocked_by.join(', '))}</span>`
+    : '';
+  const sourceChips = predictorSourceChips(win);
+  const factorChips = predictorFactorChips(win);
+  const reason = win.reason || 'Scored window in the seven-day predictor.';
+
+  return `<div class="hero-predictor-detail" role="region" aria-live="polite">
+    <div class="hero-predictor-detail-top">
+      <div>
+        <div class="hero-predictor-detail-time">${escapeHtml(win.label || 'Surf window')}</div>
+        <div class="hero-predictor-detail-reason">${escapeHtml(reason)}</div>
+      </div>
+      <div class="hero-predictor-detail-score" data-tier="${escapeHtml(tier)}">${escapeHtml(predictorScoreText(win.score))}</div>
+    </div>
+    <div class="hero-predictor-chips">
+      ${confidence}${sourceCount}${missing}${tideChip}${blocked}${sourceChips}${factorChips}
+    </div>
+  </div>`;
+}
+
+function renderPredictorRibbon(windows, selectedIndex = 0) {
+  if (!Array.isArray(windows) || !windows.length) return '';
+  const safeIdx = Math.max(0, Math.min(selectedIndex, windows.length - 1));
+  return `<div class="hero-predictor" aria-label="Seven day surf score predictor">
+    <div class="hero-predictor-head">
+      <div class="hero-predictor-title">7-day predictor</div>
+      <div class="hero-predictor-count">${windows.length} windows</div>
+    </div>
+    <div class="hero-predictor-track">
+      ${windows.map((win, idx) => renderPredictorBar(win, idx, idx === safeIdx)).join('')}
+    </div>
+    ${renderPredictorDetail(windows[safeIdx])}
+  </div>`;
+}
+
 function renderUnifiedHero(data) {
   const u = data.unified;
   if (!u) return '';
@@ -2071,18 +2473,21 @@ function renderUnifiedHero(data) {
   const windowHtml = topWindows.length
     ? renderHeroWindowCarousel(topWindows, heroIndex, currentWindowText)
     : renderHeroWindow(null, 'No clean window found in the next 7 days.', currentWindowText);
+  const predictorWindows = Array.isArray(u.predictor_windows) ? u.predictor_windows : [];
+  const predictorHtml = renderPredictorRibbon(predictorWindows, 0);
   const reason = u.decision_reason || u.agreement_note || '';
   const reasonHtml = reason
     ? `<div class="hero-reason">${escapeHtml(reason)}</div>`
     : '';
 
-  const heroState = JSON.stringify({ windows: topWindows, currentWindowText });
-  return `<div class="hero-card tier-${escapeHtml(tier)}" data-hero-state="${escapeHtml(heroState)}" data-hero-index="0">
+  const heroState = JSON.stringify({ windows: topWindows, predictorWindows, currentWindowText });
+  return `<div class="hero-card tier-${escapeHtml(tier)}" data-hero-state="${escapeHtml(heroState)}" data-hero-index="0" data-predictor-index="0">
     <div class="hero-tier-badge">${escapeHtml(badge)}</div>
     <div class="hero-headline">${escapeHtml(u.decision_headline || 'WAIT FOR A BETTER WINDOW')}</div>
     <div class="hero-summary">${escapeHtml(u.plain_summary || '')}</div>
     ${reasonHtml}
     <div class="hero-window-slot">${windowHtml}</div>
+    <div class="hero-predictor-slot">${predictorHtml}</div>
     <button class="hero-toggle-details" type="button" aria-expanded="false">Show technical details ▾</button>
   </div>`;
 }
@@ -2098,20 +2503,36 @@ function _heroState(card) {
 function _renderHeroSlot(card) {
   const state = _heroState(card);
   const windows = Array.isArray(state.windows) ? state.windows : [];
+  const predictorWindows = Array.isArray(state.predictorWindows) ? state.predictorWindows : [];
   const slot = card.querySelector('.hero-window-slot');
-  if (!slot) return;
-  const idx = Number(card.getAttribute('data-hero-index')) || 0;
-  if (windows.length) {
-    slot.innerHTML = renderHeroWindowCarousel(windows, idx, state.currentWindowText || '');
-  } else {
-    slot.innerHTML = renderHeroWindow(null, 'No clean window found in the next 7 days.', state.currentWindowText || '');
+  const predictorSlot = card.querySelector('.hero-predictor-slot');
+  if (slot) {
+    const idx = Number(card.getAttribute('data-hero-index')) || 0;
+    if (windows.length) {
+      slot.innerHTML = renderHeroWindowCarousel(windows, idx, state.currentWindowText || '');
+    } else {
+      slot.innerHTML = renderHeroWindow(null, 'No clean window found in the next 7 days.', state.currentWindowText || '');
+    }
   }
+
+  if (predictorSlot) {
+    const predictorIdx = Number(card.getAttribute('data-predictor-index')) || 0;
+    predictorSlot.innerHTML = renderPredictorRibbon(predictorWindows, predictorIdx);
+  }
+
   // Move keyboard focus back onto the carousel container so screen readers
   // re-announce the live region after navigation.
-  const carousel = slot.querySelector('.hero-window-carousel');
+  const carousel = slot && slot.querySelector('.hero-window-carousel');
   if (carousel && card.dataset.heroFocusPending === '1') {
     carousel.focus({ preventScroll: true });
     card.dataset.heroFocusPending = '0';
+  }
+
+  const predictor = predictorSlot && predictorSlot.querySelector('.hero-predictor-bar[aria-pressed="true"]');
+  if (predictor && card.dataset.predictorFocusPending === '1') {
+    predictor.focus({ preventScroll: true });
+    predictor.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    card.dataset.predictorFocusPending = '0';
   }
 }
 
@@ -2124,6 +2545,18 @@ function _heroStep(card, delta) {
   if (next === cur) return;
   card.setAttribute('data-hero-index', String(next));
   card.dataset.heroFocusPending = '1';
+  _renderHeroSlot(card);
+}
+
+function _predictorStep(card, delta) {
+  const state = _heroState(card);
+  const windows = Array.isArray(state.predictorWindows) ? state.predictorWindows : [];
+  if (windows.length <= 1) return;
+  const cur = Number(card.getAttribute('data-predictor-index')) || 0;
+  const next = Math.max(0, Math.min(windows.length - 1, cur + delta));
+  if (next === cur) return;
+  card.setAttribute('data-predictor-index', String(next));
+  card.dataset.predictorFocusPending = '1';
   _renderHeroSlot(card);
 }
 
@@ -2154,6 +2587,27 @@ function bindUnifiedHero(card) {
       if (!e.target.closest('.hero-window-carousel')) return;
       if (e.key === 'ArrowLeft') { e.preventDefault(); _heroStep(heroCard, -1); }
       else if (e.key === 'ArrowRight') { e.preventDefault(); _heroStep(heroCard, 1); }
+    });
+  }
+
+  const predictorSlot = card.querySelector('.hero-predictor-slot');
+  if (predictorSlot) {
+    predictorSlot.addEventListener('click', (e) => {
+      const bar = e.target.closest('.hero-predictor-bar');
+      if (!bar) return;
+      heroCard.setAttribute('data-predictor-index', bar.dataset.index || '0');
+      _renderHeroSlot(heroCard);
+    });
+    predictorSlot.addEventListener('keydown', (e) => {
+      const bar = e.target.closest('.hero-predictor-bar');
+      if (!bar) return;
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        _predictorStep(heroCard, -1);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        _predictorStep(heroCard, 1);
+      }
     });
   }
 }

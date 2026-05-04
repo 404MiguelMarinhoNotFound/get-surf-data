@@ -76,6 +76,31 @@ class MobileHTMLTest(unittest.TestCase):
             f"Found inline fixed widths that could break mobile: {inline_fixed}",
         )
 
+    def test_hero_carousel_remains_present(self):
+        self.assertIn(
+            "function renderHeroWindowCarousel",
+            self.html,
+            "Existing best-window carousel renderer must remain present",
+        )
+        self.assertIn(
+            "class=\"hero-window-slot\"",
+            self.html,
+            "Hero must still render the primary best-window slot",
+        )
+
+    def test_predictor_ribbon_markup_and_handlers(self):
+        for required in (
+            "function renderPredictorRibbon",
+            "function renderPredictorBar",
+            "class=\"hero-predictor-slot\"",
+            "class=\"hero-predictor-bar\"",
+            "aria-label=\"${escapeHtml(predictorAriaLabel(win))}\"",
+            "data-predictor-index",
+            "function _predictorStep",
+            "closest('.hero-predictor-bar')",
+        ):
+            self.assertIn(required, self.html)
+
 
 if __name__ == "__main__":
     unittest.main()

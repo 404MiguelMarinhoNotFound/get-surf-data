@@ -1682,6 +1682,24 @@ def _top_windows(scored_hours, predicate, now_dt, spot, limit=5, min_hours=2, ma
     return selected
 
 
+def _predictor_windows(scored_hours, now_dt, spot, min_hours=2, max_hours=4):
+    candidates = _session_candidates(
+        scored_hours,
+        lambda row: row.get("decider_score") is not None,
+        min_hours=min_hours,
+        max_hours=max_hours,
+    )
+    if not candidates:
+        return []
+    payloads = [
+        _window_payload(candidate["block"], now_dt, spot)
+        for candidate in candidates
+    ]
+    payloads = [payload for payload in payloads if payload is not None]
+    payloads.sort(key=lambda window: window["starts_at"])
+    return payloads
+
+
 def _count_blocks(scored_hours, predicate, min_hours=2):
     count = 0
     block = []
@@ -1926,6 +1944,7 @@ def find_next_windows(rating_timeline, om_hourly, spot, sf_now_utc, tide=None,
             "next_decent_window": None,
             "next_gold_window": None,
             "top_windows": [],
+            "predictor_windows": [],
             "gold_count_7d": 0,
             "current_window_ends": None,
         }
@@ -1941,6 +1960,7 @@ def find_next_windows(rating_timeline, om_hourly, spot, sf_now_utc, tide=None,
         "next_decent_window": best_window,
         "next_gold_window": _window_payload(gold_block, now_dt, spot),
         "top_windows": top_windows,
+        "predictor_windows": _predictor_windows(scored, now_dt, spot),
         "gold_count_7d": _count_blocks(scored, _hour_is_gold, min_hours=2),
         "current_window_ends": _current_window_end(scored, now_dt),
     }
@@ -2103,6 +2123,7 @@ def unify(
             "next_decent_window": windows.get("next_decent_window"),
             "next_gold_window": windows.get("next_gold_window"),
             "top_windows": windows.get("top_windows", []),
+            "predictor_windows": windows.get("predictor_windows", []),
             "gold_count_7d": windows.get("gold_count_7d", 0),
             "score": round(score, 1) if score is not None else None,
             "confidence": confidence,
@@ -2143,6 +2164,7 @@ def unify(
             "next_decent_window": None,
             "next_gold_window": None,
             "top_windows": [],
+            "predictor_windows": [],
             "gold_count_7d": 0,
             "score": None,
             "confidence": "unknown",

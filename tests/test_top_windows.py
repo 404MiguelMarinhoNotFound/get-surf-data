@@ -100,6 +100,43 @@ class TopWindowsTests(unittest.TestCase):
             self.assertIsNone(out["best_window"])
 
 
+class PredictorWindowsTests(unittest.TestCase):
+    def test_predictor_includes_low_scores_when_top_windows_are_empty(self):
+        sf = [
+            _sf_cell("2026-05-01T06:00:00+00:00", 1),
+            _sf_cell("2026-05-01T09:00:00+00:00", 1),
+        ]
+
+        out = unified.find_next_windows(sf, [], SPOT, "2026-05-01T05:00:00+00:00")
+
+        self.assertEqual(out["top_windows"], [])
+        self.assertGreater(len(out["predictor_windows"]), 0)
+        self.assertTrue(
+            any(window.get("score") is not None and window["score"] < 5.0
+                for window in out["predictor_windows"])
+        )
+
+    def test_predictor_is_chronological_and_not_capped_at_five(self):
+        sf, om = _build_week("2026-05-01", days=2, sf_rating=6)
+
+        out = unified.find_next_windows(sf, om, SPOT, "2026-04-30T23:00:00+00:00")
+        starts = [window["starts_at"] for window in out["predictor_windows"]]
+
+        self.assertGreater(len(out["predictor_windows"]), 5)
+        self.assertEqual(starts, sorted(starts))
+        self.assertLessEqual(len(out["top_windows"]), 5)
+
+    def test_predictor_carries_score_components_for_detail_drawer(self):
+        sf, om = _build_week("2026-05-01", days=1, sf_rating=6)
+
+        out = unified.find_next_windows(sf, om, SPOT, "2026-04-30T23:00:00+00:00")
+        window = out["predictor_windows"][0]
+
+        self.assertGreater(len(window["score_components"]), 0)
+        self.assertIn("sf_score", window["score_components"][0])
+        self.assertIn("om_score", window["score_components"][0])
+
+
 class RequireSfTimelineTests(unittest.TestCase):
     """SF timeline only covers ~3 days; hours beyond it must not be blocked."""
 

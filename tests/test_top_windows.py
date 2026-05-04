@@ -126,6 +126,23 @@ class PredictorWindowsTests(unittest.TestCase):
         self.assertEqual(starts, sorted(starts))
         self.assertLessEqual(len(out["top_windows"]), 5)
 
+    def test_predictor_uses_fixed_non_overlapping_three_hour_blocks(self):
+        om = [
+            _om_hour(f"2026-05-01T{hour:02d}:00:00+00:00")
+            for hour in range(4, 19)
+        ]
+
+        out = unified.find_next_windows([], om, SPOT, "2026-05-01T03:00:00+00:00")
+        labels = [window["label"] for window in out["predictor_windows"]]
+
+        self.assertEqual(labels, [
+            "Today 05:00-08:00",
+            "Today 08:00-11:00",
+            "Today 11:00-14:00",
+            "Today 14:00-17:00",
+            "Today 17:00-20:00",
+        ])
+
     def test_predictor_carries_score_components_for_detail_drawer(self):
         sf, om = _build_week("2026-05-01", days=1, sf_rating=6)
 

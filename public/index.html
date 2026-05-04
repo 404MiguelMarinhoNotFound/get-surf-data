@@ -2596,6 +2596,7 @@ function bindUnifiedHero(card) {
       const bar = e.target.closest('.hero-predictor-bar');
       if (!bar) return;
       heroCard.setAttribute('data-predictor-index', bar.dataset.index || '0');
+      heroCard.dataset.predictorFocusPending = '1';
       _renderHeroSlot(heroCard);
     });
     predictorSlot.addEventListener('keydown', (e) => {

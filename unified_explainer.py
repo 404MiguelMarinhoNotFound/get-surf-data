@@ -1682,21 +1682,30 @@ def _top_windows(scored_hours, predicate, now_dt, spot, limit=5, min_hours=2, ma
     return selected
 
 
-def _predictor_windows(scored_hours, now_dt, spot, min_hours=2, max_hours=4):
-    candidates = _session_candidates(
-        scored_hours,
-        lambda row: row.get("decider_score") is not None,
-        min_hours=min_hours,
-        max_hours=max_hours,
-    )
-    if not candidates:
-        return []
-    payloads = [
-        _window_payload(candidate["block"], now_dt, spot)
-        for candidate in candidates
-    ]
-    payloads = [payload for payload in payloads if payload is not None]
-    payloads.sort(key=lambda window: window["starts_at"])
+def _predictor_windows(scored_hours, now_dt, spot):
+    """Return fixed, non-overlapping local forecast blocks for the hero ribbon."""
+    buckets = {}
+    for row in scored_hours:
+        if row.get("decider_score") is None:
+            continue
+        local = _local_dt(row["dt"], spot)
+        if local.hour < 5 or local.hour >= 20:
+            continue
+        bucket_hour = 5 + ((local.hour - 5) // 3) * 3
+        buckets.setdefault((local.date(), bucket_hour), []).append(row)
+
+    payloads = []
+    for key in sorted(buckets):
+        rows = sorted(buckets[key], key=lambda row: row["dt"])
+        block = []
+        for row in rows:
+            if block and not _continuous(block[-1], row):
+                block = []
+            block.append(row)
+        if _block_duration_hours(block) >= 3:
+            payload = _window_payload(block, now_dt, spot)
+            if payload is not None:
+                payloads.append(payload)
     return payloads
 
 

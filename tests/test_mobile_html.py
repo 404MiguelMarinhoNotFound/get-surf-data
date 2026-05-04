@@ -98,6 +98,8 @@ class MobileHTMLTest(unittest.TestCase):
             "data-predictor-index",
             "function _predictorStep",
             "closest('.hero-predictor-bar')",
+            "heroCard.dataset.predictorFocusPending = '1'",
+            "predictor.scrollIntoView",
         ):
             self.assertIn(required, self.html)
 

@@ -138,7 +138,7 @@ class UnifiedWindowScoringTests(unittest.TestCase):
     def test_model_only_windows_appear_when_no_sf_timeline_exists(self):
         om = [
             _om_hour(f"2026-05-01T{hour:02d}:00:00+00:00")
-            for hour in range(8, 12)
+            for hour in range(7, 12)
         ]
 
         out = unified.find_next_windows([], om, SPOT, "2026-05-01T05:00:00+00:00")
@@ -169,7 +169,7 @@ class UnifiedWindowScoringTests(unittest.TestCase):
         self.assertIsNone(out["best_window"])
         self.assertEqual(out["now_tier"], "red")
 
-    def test_long_good_run_is_trimmed_to_session_length(self):
+    def test_long_good_run_uses_fixed_three_hour_window(self):
         sf = [
             _sf_cell("2026-05-01T08:00:00+00:00", 6),
             _sf_cell("2026-05-01T11:00:00+00:00", 6),
@@ -178,16 +178,16 @@ class UnifiedWindowScoringTests(unittest.TestCase):
         ]
         om = [
             _om_hour(f"2026-05-01T{hour:02d}:00:00+00:00")
-            for hour in range(8, 19)
+            for hour in range(4, 19)
         ]
 
-        out = unified.find_next_windows(sf, om, SPOT, "2026-05-01T07:00:00+00:00")
+        out = unified.find_next_windows(sf, om, SPOT, "2026-05-01T03:00:00+00:00")
         window = out["best_window"]
         start = datetime.fromisoformat(window["starts_at"])
         end = datetime.fromisoformat(window["ends_at"])
 
-        self.assertLessEqual((end - start).total_seconds() / 3600, 4)
-        self.assertIn("09:00-13:00", window["label"])
+        self.assertEqual((end - start).total_seconds() / 3600, 3)
+        self.assertRegex(window["label"], r"(Today|Tomorrow|Fri) \d{2}:00-\d{2}:00")
 
     def test_overnight_label_uses_24h_clock_and_end_day(self):
         label = unified._label_window(

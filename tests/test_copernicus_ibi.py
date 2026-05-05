@@ -1,5 +1,6 @@
 import os
 import unittest
+from datetime import datetime, timezone
 
 import copernicus_ibi
 import copernicus_ibi_explainer
@@ -66,6 +67,43 @@ class FetchSoftFailureTests(unittest.TestCase):
                 os.environ["COPERNICUS_USER"] = old_user
             if old_pass is not None:
                 os.environ["COPERNICUS_PASS"] = old_pass
+
+    def test_fetch_returns_hourly_rows_when_layers_are_available(self):
+        original_auth = copernicus_ibi._auth_header
+        original_fetch = copernicus_ibi._fetch_layers_for_time
+        calls = []
+
+        def fake_fetch(_lat, _lon, when_iso, _headers):
+            calls.append(when_iso)
+            return {
+                "wave_height": 1.0,
+                "wave_peak_period": 12.0,
+                "wave_direction": 260.0,
+                "swell_height": 0.9,
+                "swell_period": 12.0,
+                "swell_direction": 260.0,
+                "wind_wave_height": 0.1,
+            }
+
+        try:
+            copernicus_ibi._auth_header = lambda: {"Authorization": "Basic test"}
+            copernicus_ibi._fetch_layers_for_time = fake_fetch
+            out = copernicus_ibi.fetch(
+                38.7,
+                -9.3,
+                when=datetime(2026, 5, 1, 6, tzinfo=timezone.utc),
+                days=0.125,
+            )
+        finally:
+            copernicus_ibi._auth_header = original_auth
+            copernicus_ibi._fetch_layers_for_time = original_fetch
+
+        self.assertIsNotNone(out)
+        self.assertEqual(len(out["hourly"]), 3)
+        self.assertEqual(out["hourly"][0]["timestamp_utc"], "2026-05-01T06:00:00.000Z")
+        self.assertEqual(out["hourly"][0]["wave_period"], 12.0)
+        self.assertIsNone(out["hourly"][0]["wind_speed"])
+        self.assertEqual(len(calls), 3)
 
 
 class ExplainerTests(unittest.TestCase):

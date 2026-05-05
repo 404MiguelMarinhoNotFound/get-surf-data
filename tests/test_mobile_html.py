@@ -100,6 +100,13 @@ class MobileHTMLTest(unittest.TestCase):
             "closest('.hero-predictor-bar')",
             "heroCard.dataset.predictorFocusPending = '1'",
             "predictor.scrollIntoView",
+            "function windowStartKey",
+            "function findWindowIndexByStart",
+            "data-selected-window-start",
+            "Next best 3-hour surf windows",
+            "card.setAttribute('data-selected-window-start'",
+            "card.dataset.heroFocusPending = '1';\n  card.dataset.predictorFocusPending = '1';",
+            "heroCard.dataset.predictorFocusPending = '1';\n    _renderHeroSlot(heroCard);",
         ):
             self.assertIn(required, self.html)
 

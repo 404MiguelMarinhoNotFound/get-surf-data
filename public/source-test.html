@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Source extraction test</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; background: #0f172a; color: #e2e8f0; }
+    button { padding: 0.7rem 1rem; border: 0; border-radius: 0.5rem; cursor: pointer; }
+    .spot { margin: 1rem 0; padding: 1rem; background: #111827; border: 1px solid #334155; border-radius: 0.5rem; }
+    .chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; }
+    .chip { padding: 0.35rem 0.55rem; border: 1px solid #475569; border-radius: 0.4rem; background: #020617; }
+    .chip strong { color: #f8fafc; }
+    .muted { color: #94a3b8; }
+    pre { padding: 1rem; overflow: auto; background: #020617; border: 1px solid #334155; border-radius: 0.5rem; }
+  </style>
+</head>
+<body>
+  <button id="run">Test source extraction</button>
+  <div id="out"><pre>Click the button to run /api/sync for both configured spots.</pre></div>
+  <script>
+    const spots = ['carcavelos', 'caparica'];
+    document.getElementById('run').onclick = async () => {
+      const out = document.getElementById('out');
+      out.textContent = 'Running...';
+      const rows = [];
+      for (const spot of spots) {
+        const res = await fetch(`/api/sync?spot=${spot}&level=improver&refresh=1`);
+        const data = await res.json();
+        const scoreComponents = data.unified?.best_window?.score_components || [];
+        rows.push({
+          spot,
+          surfForecast: data.unified?.source_scores?.sf,
+          surfline: data.unified?.source_scores?.surfline,
+          windguru: data.unified?.source_scores?.windguru,
+          openMeteo: data.unified?.source_scores?.om,
+          gfs: data.unified?.source_scores?.gfs,
+          bestWindow: data.unified?.best_window,
+          bestWindowComponents: scoreComponents.map(c => ({
+            starts_at: c.starts_at,
+            sf: c.sf_score,
+            surfline: c.surfline_score,
+            windguru: c.windguru_score,
+            om: c.om_score,
+            gfs: c.gfs_score,
+            ibi: c.ibi_score
+          })),
+          surflineFields: data.surfline_analysis && Object.keys(data.surfline_analysis),
+          windguruCurrent: data.windguru_analysis,
+          sourcesUsed: data.unified?.sources_used,
+          weights: data.unified?.weights,
+          errors: {
+            surfline: data.surfline_error,
+            windguru: data.windguru_error
+          }
+        });
+      }
+      out.innerHTML = rows.map(renderRow).join('') + `<pre>${escapeHtml(JSON.stringify(rows, null, 2))}</pre>`;
+    };
+
+    function renderRow(row) {
+      const sourceScores = {
+        'Surf-Forecast': row.surfForecast,
+        'Surfline': row.surfline,
+        'Windguru': row.windguru,
+        'Open-Meteo': row.openMeteo,
+        'NOAA GFS': row.gfs
+      };
+      const chips = Object.entries(sourceScores)
+        .map(([label, score]) => `<span class="chip"><strong>${escapeHtml(label)}</strong> ${score == null ? 'missing' : `${escapeHtml(score)}/10`}</span>`)
+        .join('');
+      const best = row.bestWindow
+        ? `${escapeHtml(row.bestWindow.label)} (${escapeHtml(row.bestWindow.score)}/10)`
+        : '<span class="muted">No best window emitted</span>';
+      const components = row.bestWindowComponents.length
+        ? `<pre>${escapeHtml(JSON.stringify(row.bestWindowComponents, null, 2))}</pre>`
+        : '<p class="muted">No best-window score components. Surfline is in the current predictor score, but no window survived the gates.</p>';
+      return `<section class="spot">
+        <h2>${escapeHtml(row.spot)}</h2>
+        <div class="chips">${chips}</div>
+        <p><strong>Sources used:</strong> ${escapeHtml((row.sourcesUsed || []).join(', ') || 'none')}</p>
+        <p><strong>Best window:</strong> ${best}</p>
+        <h3>Best-window component scores</h3>
+        ${components}
+      </section>`;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+  </script>
+</body>
+</html>

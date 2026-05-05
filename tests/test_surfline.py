@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 import surfline
 
@@ -55,6 +56,40 @@ class SurflineParserTests(unittest.TestCase):
         self.assertEqual(current["water_temp_c"], 17.0)
         self.assertEqual(current["wetsuit_hint"], "3/2mm Fullsuit")
         self.assertEqual(len(parsed["hourly"]), 1)
+        hourly = parsed["hourly"][0]
+        self.assertEqual(hourly["timestamp_utc"], "2026-05-03T08:00:00+00:00")
+        self.assertEqual(hourly["swell_period"], 10.0)
+        self.assertEqual(hourly["swell_direction"], 244.0)
+        self.assertAlmostEqual(hourly["wind_speed"], 16.67, places=2)
+        self.assertEqual(hourly["surfline_optimal_score"], 2)
+
+    def test_get_json_uses_browser_like_headers(self):
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b'{"ok": true}'
+
+        captured = {}
+
+        def fake_urlopen(req, timeout):
+            captured["headers"] = dict(req.header_items())
+            captured["timeout"] = timeout
+            return FakeResponse()
+
+        with patch("urllib.request.urlopen", fake_urlopen):
+            self.assertEqual(surfline._get_json("https://example.test"), {"ok": True})
+
+        self.assertIn("User-agent", captured["headers"])
+        self.assertIn("Accept", captured["headers"])
+        self.assertIn("Origin", captured["headers"])
+        self.assertIn("Referer", captured["headers"])
 
 
 class SurflineTierAndAttributionTests(unittest.TestCase):

@@ -19,9 +19,17 @@ KTS_TO_KMH = 1.852
 REPORT_URL = "https://services.surfline.com/kbyg/spots/reports?spotId={spot_id}"
 FORECAST_URL = "https://services.surfline.com/kbyg/spots/forecasts/{kind}?spotId={spot_id}&days={days}&intervalHours=1"
 
+DEFAULT_HEADERS = {
+    "User-Agent": USER_AGENT,
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Origin": "https://www.surfline.com",
+    "Referer": "https://www.surfline.com/",
+}
+
 
 def _get_json(url, timeout=15):
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    req = urllib.request.Request(url, headers=DEFAULT_HEADERS)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
 

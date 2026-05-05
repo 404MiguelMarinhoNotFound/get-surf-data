@@ -4,12 +4,12 @@ Copernicus Marine IBI Wave Forecast client.
 Iberia-Biscay-Ireland regional MFWAM, ECMWF wind-forced. Hourly grid at ~1/36 deg.
 Product: IBI_ANALYSISFORECAST_WAV_005_005
 
-We hit the WMS GetFeatureInfo endpoint over HTTPS with HTTP Basic Auth, one request
-per layer for the current hour. Returns a small JSON/XML payload per call so it
-fits Vercel's stdlib + cold-start budget — no NetCDF/GRIB parsing.
+We hit the WMTS GetFeatureInfo endpoint over HTTPS with HTTP Basic Auth, one
+request per layer/time. Returns small JSON/XML payloads so it fits the stdlib
+runtime without NetCDF/GRIB parsing.
 
-Auth via env vars: COPERNICUS_USER, COPERNICUS_PASS. If unset, fetch returns None
-and the rest of the system carries on with SF + Open-Meteo only.
+Auth via env vars: COPERNICUS_USER, COPERNICUS_PASS. If unset, fetch returns
+None and the rest of the system carries on with the other sources.
 """
 import base64
 import json
@@ -19,20 +19,18 @@ import re
 import threading
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta, timezone
 
-# Copernicus Marine WMTS endpoint. WMTS GetFeatureInfo returns a small JSON
-# payload per layer + tile pixel. Layer IDs include the product / dataset path.
+
 _WMTS_BASE = "https://wmts.marine.copernicus.eu/teroWmts"
 _PRODUCT = "IBI_ANALYSISFORECAST_WAV_005_005"
 _DATASET = "cmems_mod_ibi_wav_anfc_0.027deg_PT1H-i_202411"
 _STYLE = "cmap:amp"
 _TMS = "EPSG:4326"
-_ZOOM = 6  # ~0.011 deg/pixel — well below the native 0.027 deg grid.
+_ZOOM = 6
 _TILE_PX = 256
 
-# VHM0 (Hs), VTPK (peak period), VMDR (mean direction),
-# VHM0_SW1/VTM01_SW1/VMDR_SW1 (primary swell partition), VHM0_WW (wind sea Hs).
 _LAYERS = {
     "wave_height":      "VHM0",
     "wave_peak_period": "VTPK",
@@ -44,6 +42,9 @@ _LAYERS = {
 }
 
 _TIMEOUT_S = 12
+_DEFAULT_DAYS = 7
+_MAX_HOURLY_WORKERS = 24
+_HOURLY_BUDGET_S = 8
 
 
 def _auth_header():
@@ -61,8 +62,8 @@ def _round_to_hour(dt):
 
 def _tile_coords(lat, lon, zoom=_ZOOM):
     """Convert (lat, lon) to WMTS EPSG:4326 (TileCol, TileRow, I, J)."""
-    n = 2 ** zoom  # tiles tall; tiles wide = 2 * n
-    tile_deg = 180.0 / n  # tile spans tile_deg degrees in both lat and lon
+    n = 2 ** zoom
+    tile_deg = 180.0 / n
     pixel_deg = tile_deg / _TILE_PX
 
     x = lon + 180.0
@@ -71,7 +72,6 @@ def _tile_coords(lat, lon, zoom=_ZOOM):
     row = int(y // tile_deg)
     i = int((x - col * tile_deg) / pixel_deg)
     j = int((y - row * tile_deg) / pixel_deg)
-    # Clamp to tile bounds (edge case: lat/lon at exact tile boundary)
     i = max(0, min(_TILE_PX - 1, i))
     j = max(0, min(_TILE_PX - 1, j))
     col = max(0, min(2 * n - 1, col))
@@ -105,12 +105,7 @@ _NUM_RE = re.compile(r"-?\d+(?:\.\d+)?(?:[eE]-?\d+)?")
 
 
 def _extract_value(body):
-    """Pull the first numeric value out of a WMS GetFeatureInfo response.
-
-    Copernicus returns JSON when INFO_FORMAT=application/json, but some servers
-    fall back to XML/HTML. We try JSON first, then regex-scan for the first
-    plausible number.
-    """
+    """Pull the first measurement value out of a WMTS GetFeatureInfo response."""
     if not body:
         return None
     try:
@@ -119,56 +114,41 @@ def _extract_value(body):
         payload = None
 
     if isinstance(payload, dict):
-        # GeoJSON FeatureCollection: features[].properties.value is the measurement.
-        # We must only read that field — other props (lat, lon) are coords, not data.
         feats = payload.get("features") or []
-        for f in feats:
-            props = (f or {}).get("properties") or {}
+        for feat in feats:
+            props = (feat or {}).get("properties") or {}
             if "value" not in props:
                 continue
-            v = props.get("value")
-            if v is None:
-                continue
             try:
-                fv = float(v)
+                value = float(props.get("value"))
             except (TypeError, ValueError):
                 continue
-            if fv == 9999.0 or fv < -9000:
-                continue
-            return fv
-        # Some servers return {"value": x} at the top level.
+            if value != 9999.0 and value > -9000:
+                return value
         if "value" in payload:
             try:
-                fv = float(payload["value"])
-                if fv != 9999.0 and fv > -9000:
-                    return fv
+                value = float(payload["value"])
             except (TypeError, ValueError):
-                pass
-        # JSON parsed cleanly but had no usable value — don't regex-scan keys.
+                return None
+            return value if value != 9999.0 and value > -9000 else None
         return None
 
-    # Non-JSON body: regex-scan for a numeric value, after a ">" or whitespace
-    # to avoid matching digits embedded inside layer names like "VHM0".
     text = body if isinstance(body, str) else body.decode("utf-8", errors="ignore")
-    for m in _NUM_RE.finditer(text):
-        # Reject matches that are immediately preceded by a letter (e.g. "VHM0").
-        start = m.start()
+    for match in _NUM_RE.finditer(text):
+        start = match.start()
         if start > 0 and text[start - 1].isalpha():
             continue
         try:
-            v = float(m.group(0))
+            value = float(match.group(0))
         except ValueError:
             continue
-        if v == 9999.0 or v < -9000:
-            continue
-        return v
+        if value != 9999.0 and value > -9000:
+            return value
     return None
 
 
 def _shift_seaward(lat, lon, offshore_bearing_deg, dist_km=8.0):
-    """Move (lat, lon) ~dist_km away from shore along the seaward direction.
-    `offshore_bearing_deg` is the compass bearing pointing inland from the
-    break, so the sea is at that bearing + 180."""
+    """Move a coastal point seaward from the configured offshore bearing."""
     if offshore_bearing_deg is None:
         return lat, lon
     seaward = math.radians((float(offshore_bearing_deg) + 180.0) % 360.0)
@@ -187,43 +167,20 @@ def _fetch_layer(layer, lat, lon, when_iso, headers, out, key):
         out[key] = None
 
 
-def fetch(lat, lon, when=None, offshore_bearing=None):
-    """Fetch IBI wave variables at (lat, lon) for the given UTC datetime.
+def _fetch_layers_for_time(lat, lon, when_iso, headers):
+    out = {}
+    threads = []
+    for key, layer in _LAYERS.items():
+        thread = threading.Thread(target=_fetch_layer, args=(layer, lat, lon, when_iso, headers, out, key))
+        thread.start()
+        threads.append(thread)
+    for thread in threads:
+        thread.join(timeout=_TIMEOUT_S + 2)
+    return out
 
-    Returns a dict shaped like open_meteo.fetch()'s 'current' so the same scoring
-    code can consume it. Returns None if creds are missing or every layer failed.
-    """
-    headers = _auth_header()
-    if headers is None:
-        return None
 
-    when = when or datetime.now(timezone.utc)
-    when_iso = _round_to_hour(when).strftime("%Y-%m-%dT%H:00:00.000Z")
-
-    def _fan_out(probe_lat, probe_lon):
-        out = {}
-        threads = []
-        for key, layer in _LAYERS.items():
-            t = threading.Thread(target=_fetch_layer, args=(layer, probe_lat, probe_lon, when_iso, headers, out, key))
-            t.start()
-            threads.append(t)
-        for t in threads:
-            t.join(timeout=_TIMEOUT_S + 2)
-        return out
-
-    used_lat, used_lon = lat, lon
-    out = _fan_out(used_lat, used_lon)
-
-    # Coastal points often land on grid cells masked as land. If the primary
-    # Hs (VHM0) came back null, retry once with a seaward offset.
-    if out.get("wave_height") is None and offshore_bearing is not None:
-        used_lat, used_lon = _shift_seaward(lat, lon, offshore_bearing)
-        out = _fan_out(used_lat, used_lon)
-
-    if all(v is None for v in out.values()):
-        return None
-
-    current = {
+def _normalize_ibi_row(when_iso, out):
+    return {
         "timestamp_utc":     when_iso,
         "wave_height":       out.get("wave_height"),
         "wave_period":       out.get("wave_peak_period"),
@@ -233,19 +190,79 @@ def fetch(lat, lon, when=None, offshore_bearing=None):
         "swell_direction":   out.get("swell_direction"),
         "swell_peak_period": out.get("wave_peak_period"),
         "wind_wave_height":  out.get("wind_wave_height"),
-        # IBI does not expose wind directly here — leave None so the wind grader
-        # falls through to the unknown branch (the OM source covers wind).
         "wind_speed":        None,
         "wind_direction":    None,
         "wind_gusts":        None,
         "air_temp":          None,
     }
 
+
+def fetch(lat, lon, when=None, offshore_bearing=None, days=_DEFAULT_DAYS):
+    """Fetch IBI wave variables at (lat, lon).
+
+    The return shape mirrors open_meteo.fetch(): current plus hourly model rows.
+    Hourly rows are best-effort; if credentials are missing or all layers fail,
+    returns None so callers can renormalize to the other sources.
+    """
+    headers = _auth_header()
+    if headers is None:
+        return None
+
+    when = when or datetime.now(timezone.utc)
+    when = _round_to_hour(when)
+    when_iso = when.strftime("%Y-%m-%dT%H:00:00.000Z")
+
+    used_lat, used_lon = lat, lon
+    out = _fetch_layers_for_time(used_lat, used_lon, when_iso, headers)
+    if out.get("wave_height") is None and offshore_bearing is not None:
+        used_lat, used_lon = _shift_seaward(lat, lon, offshore_bearing)
+        out = _fetch_layers_for_time(used_lat, used_lon, when_iso, headers)
+
+    if all(value is None for value in out.values()):
+        return None
+
+    current = _normalize_ibi_row(when_iso, out)
+    hourly = [current]
+    total_hours = max(0, int(float(days or 0) * 24))
+    hour_times = [
+        (when + timedelta(hours=offset)).strftime("%Y-%m-%dT%H:00:00.000Z")
+        for offset in range(1, total_hours)
+    ]
+
+    def _hourly_row(hour_iso):
+        hour_out = _fetch_layers_for_time(used_lat, used_lon, hour_iso, headers)
+        if all(value is None for value in hour_out.values()):
+            return None
+        return _normalize_ibi_row(hour_iso, hour_out)
+
+    if hour_times:
+        hourly_budget = float(os.environ.get("COPERNICUS_HOURLY_BUDGET_S", _HOURLY_BUDGET_S))
+        executor = ThreadPoolExecutor(max_workers=_MAX_HOURLY_WORKERS)
+        futures = [executor.submit(_hourly_row, hour_iso) for hour_iso in hour_times]
+        try:
+            for future in as_completed(futures, timeout=hourly_budget):
+                try:
+                    row = future.result()
+                except Exception:
+                    row = None
+                if row is not None:
+                    hourly.append(row)
+        except TimeoutError:
+            pass
+        finally:
+            for future in futures:
+                future.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
+    hourly.sort(key=lambda row: row.get("timestamp_utc") or "")
+
     return {
         "current":     current,
         "today_hours": [],
-        "hourly":      [],
+        "hourly":      hourly,
         "fetched_at":  datetime.now(timezone.utc).isoformat(),
-        "probe_point": {"lat": round(used_lat, 4), "lon": round(used_lon, 4),
-                        "shifted_seaward": (used_lat, used_lon) != (lat, lon)},
+        "probe_point": {
+            "lat": round(used_lat, 4),
+            "lon": round(used_lon, 4),
+            "shifted_seaward": (used_lat, used_lon) != (lat, lon),
+        },
     }

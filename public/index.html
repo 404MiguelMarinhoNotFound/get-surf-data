@@ -2255,7 +2255,7 @@ function renderHeroWindowCarousel(windows, index, currentWindowText) {
   const single = renderHeroWindow(windows[safeIdx], '', safeIdx === 0 ? currentWindowText : '');
   const prevDisabled = safeIdx === 0 ? 'disabled' : '';
   const nextDisabled = safeIdx === windows.length - 1 ? 'disabled' : '';
-  return `<div class="hero-window-carousel" role="region" aria-live="polite" aria-label="Best surf windows" tabindex="0">
+  return `<div class="hero-window-carousel" role="region" aria-live="polite" aria-label="Next best 3-hour surf windows" tabindex="0">
     <button class="hero-window-nav hero-window-prev" type="button" aria-label="Previous window" ${prevDisabled}>${CHEVRON_LEFT_SVG}</button>
     ${single}
     <button class="hero-window-nav hero-window-next" type="button" aria-label="Next window" ${nextDisabled}>${CHEVRON_RIGHT_SVG}</button>
@@ -2474,14 +2474,16 @@ function renderUnifiedHero(data) {
     ? renderHeroWindowCarousel(topWindows, heroIndex, currentWindowText)
     : renderHeroWindow(null, 'No clean window found in the next 7 days.', currentWindowText);
   const predictorWindows = Array.isArray(u.predictor_windows) ? u.predictor_windows : [];
-  const predictorHtml = renderPredictorRibbon(predictorWindows, 0);
+  const selectedStart = topWindows.length ? windowStartKey(topWindows[0]) : '';
+  const initialPredictorIndex = Math.max(0, findWindowIndexByStart(predictorWindows, selectedStart));
+  const predictorHtml = renderPredictorRibbon(predictorWindows, initialPredictorIndex);
   const reason = u.decision_reason || u.agreement_note || '';
   const reasonHtml = reason
     ? `<div class="hero-reason">${escapeHtml(reason)}</div>`
     : '';
 
   const heroState = JSON.stringify({ windows: topWindows, predictorWindows, currentWindowText });
-  return `<div class="hero-card tier-${escapeHtml(tier)}" data-hero-state="${escapeHtml(heroState)}" data-hero-index="0" data-predictor-index="0">
+  return `<div class="hero-card tier-${escapeHtml(tier)}" data-hero-state="${escapeHtml(heroState)}" data-hero-index="0" data-predictor-index="${escapeHtml(String(initialPredictorIndex))}" data-selected-window-start="${escapeHtml(selectedStart)}">
     <div class="hero-tier-badge">${escapeHtml(badge)}</div>
     <div class="hero-headline">${escapeHtml(u.decision_headline || 'WAIT FOR A BETTER WINDOW')}</div>
     <div class="hero-summary">${escapeHtml(u.plain_summary || '')}</div>
@@ -2490,6 +2492,20 @@ function renderUnifiedHero(data) {
     <div class="hero-predictor-slot">${predictorHtml}</div>
     <button class="hero-toggle-details" type="button" aria-expanded="false">Show technical details ▾</button>
   </div>`;
+}
+
+function windowStartKey(win) {
+  return win && typeof win.starts_at === 'string' ? win.starts_at : '';
+}
+
+function clampIndex(index, length) {
+  if (!length) return 0;
+  return Math.max(0, Math.min(Number(index) || 0, length - 1));
+}
+
+function findWindowIndexByStart(windows, startsAt) {
+  if (!startsAt || !Array.isArray(windows)) return -1;
+  return windows.findIndex(win => windowStartKey(win) === startsAt);
 }
 
 function _heroState(card) {
@@ -2506,8 +2522,12 @@ function _renderHeroSlot(card) {
   const predictorWindows = Array.isArray(state.predictorWindows) ? state.predictorWindows : [];
   const slot = card.querySelector('.hero-window-slot');
   const predictorSlot = card.querySelector('.hero-predictor-slot');
+  const selectedStart = card.getAttribute('data-selected-window-start') || '';
+
   if (slot) {
-    const idx = Number(card.getAttribute('data-hero-index')) || 0;
+    let idx = findWindowIndexByStart(windows, selectedStart);
+    if (idx === -1) idx = clampIndex(card.getAttribute('data-hero-index'), windows.length);
+    card.setAttribute('data-hero-index', String(idx));
     if (windows.length) {
       slot.innerHTML = renderHeroWindowCarousel(windows, idx, state.currentWindowText || '');
     } else {
@@ -2516,7 +2536,9 @@ function _renderHeroSlot(card) {
   }
 
   if (predictorSlot) {
-    const predictorIdx = Number(card.getAttribute('data-predictor-index')) || 0;
+    let predictorIdx = findWindowIndexByStart(predictorWindows, selectedStart);
+    if (predictorIdx === -1) predictorIdx = clampIndex(card.getAttribute('data-predictor-index'), predictorWindows.length);
+    card.setAttribute('data-predictor-index', String(predictorIdx));
     predictorSlot.innerHTML = renderPredictorRibbon(predictorWindows, predictorIdx);
   }
 
@@ -2531,7 +2553,7 @@ function _renderHeroSlot(card) {
   const predictor = predictorSlot && predictorSlot.querySelector('.hero-predictor-bar[aria-pressed="true"]');
   if (predictor && card.dataset.predictorFocusPending === '1') {
     predictor.focus({ preventScroll: true });
-    predictor.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    predictor.scrollIntoView({ block: 'nearest', inline: 'center' });
     card.dataset.predictorFocusPending = '0';
   }
 }
@@ -2540,11 +2562,13 @@ function _heroStep(card, delta) {
   const state = _heroState(card);
   const windows = Array.isArray(state.windows) ? state.windows : [];
   if (windows.length <= 1) return;
-  const cur = Number(card.getAttribute('data-hero-index')) || 0;
-  const next = Math.max(0, Math.min(windows.length - 1, cur + delta));
+  const cur = clampIndex(card.getAttribute('data-hero-index'), windows.length);
+  const next = clampIndex(cur + delta, windows.length);
   if (next === cur) return;
   card.setAttribute('data-hero-index', String(next));
+  card.setAttribute('data-selected-window-start', windowStartKey(windows[next]));
   card.dataset.heroFocusPending = '1';
+  card.dataset.predictorFocusPending = '1';
   _renderHeroSlot(card);
 }
 
@@ -2552,10 +2576,13 @@ function _predictorStep(card, delta) {
   const state = _heroState(card);
   const windows = Array.isArray(state.predictorWindows) ? state.predictorWindows : [];
   if (windows.length <= 1) return;
-  const cur = Number(card.getAttribute('data-predictor-index')) || 0;
-  const next = Math.max(0, Math.min(windows.length - 1, cur + delta));
+  const cur = clampIndex(card.getAttribute('data-predictor-index'), windows.length);
+  const next = clampIndex(cur + delta, windows.length);
   if (next === cur) return;
   card.setAttribute('data-predictor-index', String(next));
+  card.setAttribute('data-selected-window-start', windowStartKey(windows[next]));
+  const heroIdx = findWindowIndexByStart(state.windows || [], windowStartKey(windows[next]));
+  if (heroIdx !== -1) card.setAttribute('data-hero-index', String(heroIdx));
   card.dataset.predictorFocusPending = '1';
   _renderHeroSlot(card);
 }
@@ -2595,7 +2622,14 @@ function bindUnifiedHero(card) {
     predictorSlot.addEventListener('click', (e) => {
       const bar = e.target.closest('.hero-predictor-bar');
       if (!bar) return;
-      heroCard.setAttribute('data-predictor-index', bar.dataset.index || '0');
+      const state = _heroState(heroCard);
+      const predictorWindows = Array.isArray(state.predictorWindows) ? state.predictorWindows : [];
+      const idx = clampIndex(bar.dataset.index, predictorWindows.length);
+      const selected = predictorWindows[idx];
+      heroCard.setAttribute('data-predictor-index', String(idx));
+      heroCard.setAttribute('data-selected-window-start', windowStartKey(selected));
+      const heroIdx = findWindowIndexByStart(state.windows || [], windowStartKey(selected));
+      if (heroIdx !== -1) heroCard.setAttribute('data-hero-index', String(heroIdx));
       heroCard.dataset.predictorFocusPending = '1';
       _renderHeroSlot(heroCard);
     });
@@ -2610,6 +2644,8 @@ function bindUnifiedHero(card) {
         _predictorStep(heroCard, 1);
       }
     });
+    heroCard.dataset.predictorFocusPending = '1';
+    _renderHeroSlot(heroCard);
   }
 }
 

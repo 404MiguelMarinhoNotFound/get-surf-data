@@ -48,6 +48,9 @@ BASE_WEIGHTS = {
 SCORE_GOLD = 7.5
 SCORE_GREEN = 6.2
 SCORE_BEST_WINDOW = 5.0
+FIXED_WINDOW_HOURS = (5, 8, 11, 14, 17)
+FIXED_WINDOW_DURATION_HOURS = 3
+TOP_WINDOW_LIMIT = 10
 
 _SF_HARD_GATE_LABELS = {"Height", "Period", "Tide"}
 _SURFLINE_HARD_GATE_LABELS = set()
@@ -1655,46 +1658,25 @@ def _best_session(scored_hours, predicate, min_hours=2, max_hours=4):
     return candidates[0]["block"]
 
 
-def _top_windows(scored_hours, predicate, now_dt, spot, limit=5, min_hours=2, max_hours=4):
-    candidates = _session_candidates(scored_hours, predicate, min_hours, max_hours)
-    if not candidates:
-        return []
-    candidates.sort(
-        key=lambda item: (
-            -round(item["score"], 6),
-            -_block_duration_hours(item["block"]),
-            item["block"][0]["dt"],
-        )
-    )
-    selected = []
-    used_buckets = set()
-    for cand in candidates:
-        block = cand["block"]
-        start_local = _local_dt(block[0]["dt"], spot)
-        bucket = (start_local.date(), "AM" if start_local.hour < 13 else "PM")
-        if bucket in used_buckets:
-            continue
-        used_buckets.add(bucket)
-        selected.append(block)
-        if len(selected) >= limit:
-            break
-    selected.sort(key=lambda block: block[0]["dt"])
-    return selected
-
-
-def _predictor_windows(scored_hours, now_dt, spot):
-    """Return fixed, non-overlapping local forecast blocks for the hero ribbon."""
+def _fixed_three_hour_blocks(scored_hours, spot):
+    """Return complete local 3-hour daylight blocks, chronological."""
     buckets = {}
     for row in scored_hours:
         if row.get("decider_score") is None:
             continue
         local = _local_dt(row["dt"], spot)
-        if local.hour < 5 or local.hour >= 20:
+        if local.hour < FIXED_WINDOW_HOURS[0] or local.hour >= 20:
             continue
-        bucket_hour = 5 + ((local.hour - 5) // 3) * 3
+        bucket_hour = (
+            FIXED_WINDOW_HOURS[0]
+            + ((local.hour - FIXED_WINDOW_HOURS[0]) // FIXED_WINDOW_DURATION_HOURS)
+            * FIXED_WINDOW_DURATION_HOURS
+        )
+        if bucket_hour not in FIXED_WINDOW_HOURS:
+            continue
         buckets.setdefault((local.date(), bucket_hour), []).append(row)
 
-    payloads = []
+    blocks = []
     for key in sorted(buckets):
         rows = sorted(buckets[key], key=lambda row: row["dt"])
         block = []
@@ -1702,11 +1684,64 @@ def _predictor_windows(scored_hours, now_dt, spot):
             if block and not _continuous(block[-1], row):
                 block = []
             block.append(row)
-        if _block_duration_hours(block) >= 3:
-            payload = _window_payload(block, now_dt, spot)
-            if payload is not None:
-                payloads.append(payload)
+        if (
+            block
+            and _local_dt(block[0]["dt"], spot).hour == key[1]
+            and _block_duration_hours(block) == FIXED_WINDOW_DURATION_HOURS
+        ):
+            blocks.append(block[:FIXED_WINDOW_DURATION_HOURS])
+    return blocks
+
+
+def _window_has_shutdown_gate(block):
+    for row in block:
+        gate = row.get("hard_gate") or {}
+        if gate.get("blocked") and (gate.get("source") or "") == "sf_tide":
+            return True
+    return False
+
+
+def _top_windows(scored_hours, predicate, now_dt, spot, limit=TOP_WINDOW_LIMIT):
+    candidates = []
+    for block in _fixed_three_hour_blocks(scored_hours, spot):
+        score = _harmonic_mean(row["decider_score"] for row in block)
+        if score is None:
+            continue
+        if predicate is _hour_is_decent:
+            if score < SCORE_BEST_WINDOW or _window_has_shutdown_gate(block):
+                continue
+        elif predicate is _hour_is_gold:
+            if score < SCORE_GOLD or _window_has_shutdown_gate(block):
+                continue
+        elif not all(predicate(row) for row in block):
+            continue
+        candidates.append({"block": block, "score": score})
+
+    candidates.sort(
+        key=lambda item: (
+            -round(item["score"], 6),
+            item["block"][0]["dt"],
+        )
+    )
+    return [item["block"] for item in candidates[:limit]]
+
+
+def _predictor_windows(scored_hours, now_dt, spot):
+    """Return fixed, non-overlapping local forecast blocks for the hero ribbon."""
+    payloads = []
+    for block in _fixed_three_hour_blocks(scored_hours, spot):
+        payload = _window_payload(block, now_dt, spot)
+        if payload is not None:
+            payloads.append(payload)
     return payloads
+
+
+def _count_fixed_blocks(scored_hours, predicate, spot):
+    count = 0
+    for block in _fixed_three_hour_blocks(scored_hours, spot):
+        if all(predicate(row) for row in block):
+            count += 1
+    return count
 
 
 def _count_blocks(scored_hours, predicate, min_hours=2):
@@ -1958,19 +1993,20 @@ def find_next_windows(rating_timeline, om_hourly, spot, sf_now_utc, tide=None,
             "current_window_ends": None,
         }
 
-    top_blocks = _top_windows(scored, _hour_is_decent, now_dt, spot, limit=5, min_hours=2, max_hours=4)
+    top_blocks = _top_windows(scored, _hour_is_decent, now_dt, spot, limit=TOP_WINDOW_LIMIT)
     top_windows = [_window_payload(block, now_dt, spot) for block in top_blocks]
     best_window = top_windows[0] if top_windows else None
-    gold_block = _best_session(scored, _hour_is_gold, min_hours=2, max_hours=4)
+    gold_blocks = _top_windows(scored, _hour_is_gold, now_dt, spot, limit=1)
+    gold_window = _window_payload(gold_blocks[0], now_dt, spot) if gold_blocks else None
 
     return {
         "now_tier": _now_tier(scored, now_dt),
         "best_window": best_window,
         "next_decent_window": best_window,
-        "next_gold_window": _window_payload(gold_block, now_dt, spot),
+        "next_gold_window": gold_window,
         "top_windows": top_windows,
         "predictor_windows": _predictor_windows(scored, now_dt, spot),
-        "gold_count_7d": _count_blocks(scored, _hour_is_gold, min_hours=2),
+        "gold_count_7d": _count_fixed_blocks(scored, _hour_is_gold, spot),
         "current_window_ends": _current_window_end(scored, now_dt),
     }
 

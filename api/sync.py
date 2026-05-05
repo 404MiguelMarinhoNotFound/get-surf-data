@@ -205,6 +205,9 @@ def _sync_spot(spot_id, level=explainer.DEFAULT_LEVEL):
         data["ibi_analysis"] = None
         data["ibi_error"] = ibi_error[0] or "Copernicus IBI fetch failed"
 
+    ibi_hourly = ibi_result[0].get("hourly", []) if ibi_result[0] else []
+    data["ibi_hourly"] = ibi_hourly
+
     data["unified"] = unified_explainer.unify(
         sf_data=data,
         om_analysis=data.get("om_analysis"),
@@ -212,6 +215,7 @@ def _sync_spot(spot_id, level=explainer.DEFAULT_LEVEL):
         spot=spot,
         level=level,
         ibi_analysis=data.get("ibi_analysis"),
+        ibi_hourly=ibi_hourly,
         gfs_analysis=data.get("gfs_analysis"),
         gfs_hourly=gfs_hourly,
         surfline_analysis=data.get("surfline_analysis"),

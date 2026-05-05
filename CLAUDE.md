@@ -106,6 +106,18 @@ Implementation details:
 - Frontend: `renderHeroWindowCarousel()` wraps the existing `renderHeroWindow` in a `role="region" aria-live="polite"` container. State (windows list + current index) lives on the `.hero-card` element via `data-hero-state` / `data-hero-index` attributes so re-renders don't reset it.
 - No database needed — OM and GFS already deliver 7 days of hourly data; `find_next_windows()` already iterated the full 7-day horizon before this change.
 
+## 2026-05 seven-day hero predictor ribbon
+
+The hero card keeps the top-5 best-window carousel as the primary recommendation, and adds a compact rolling predictor ribbon underneath it. The ribbon is explanatory lineage, not a replacement ranking surface: it should show low/poor windows too so users can see why the best window stands out.
+
+Implementation details:
+
+- `find_next_windows()` now returns `predictor_windows: [...]` alongside existing `top_windows`. `best_window`, `top_windows`, and carousel behavior remain backwards-compatible.
+- `unified_explainer._predictor_windows()` must use fixed, non-overlapping local 3-hour blocks: `05:00-08:00`, `08:00-11:00`, `11:00-14:00`, `14:00-17:00`, `17:00-20:00`. Do **not** use `_session_candidates()` here, because that creates overlapping combinations such as `05-07`, `05-08`, `05-09`, `06-08`.
+- The predictor includes all scored daylight blocks with a full 3 hours of data, including scores below 5.0 and hard-gated/blocked context where present. Each payload reuses `_window_payload()`, so click details can show `score_components`, confidence, tide, factor scores, and per-source scores.
+- Frontend: `renderPredictorRibbon()` renders the bar strip below `.hero-window-slot`. Bars use existing palette tiers: `7.5+` gold, `6.2+` green, `5.0+` cyan/surfable, below 5 muted low.
+- Clicking/tapping a predictor bar updates `data-predictor-index`, keeps the selected bar highlighted via `aria-pressed="true"`, and sets `data-predictor-focus-pending` behavior (`heroCard.dataset.predictorFocusPending = '1'`) so re-rendering the detail drawer scrolls/focuses the selected bar back into view instead of resetting UX to the start.
+
 ## 2026-05 doctrine V2 scoring notes
 
 The scoring engine now follows the research doctrine in `C:/Users/Migue/Downloads/surf_decider_research_doctrine.md`.
@@ -209,6 +221,7 @@ Key unified fields for the hero card:
 |---|---|---|
 | `best_window` | object\|null | Top-ranked decent window (alias of `top_windows[0]`) |
 | `top_windows` | array | Up to 5 best non-overlapping windows over 7 days, ranked by score |
+| `predictor_windows` | array | Chronological fixed 3-hour lineage blocks (`05-08`, `08-11`, `11-14`, `14-17`, `17-20`) over 7 days, including low scores |
 | `next_gold_window` | object\|null | Best gold-tier (≥7.5) window |
 | `gold_count_7d` | int | Number of gold blocks in the next 7 days |
 | `current_window_ends` | ISO string\|null | When the current green window closes (if decision is `go`) |

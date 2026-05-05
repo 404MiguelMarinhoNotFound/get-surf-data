@@ -52,30 +52,25 @@ def _build_week(start_date_iso, days=7, sf_rating=6):
 
 
 class TopWindowsTests(unittest.TestCase):
-    def test_returns_at_most_five(self):
+    def test_returns_at_most_ten(self):
         sf, om = _build_week("2026-05-01", days=7, sf_rating=6)
         out = unified.find_next_windows(sf, om, SPOT, "2026-04-30T23:00:00+00:00")
         self.assertIsInstance(out["top_windows"], list)
-        self.assertLessEqual(len(out["top_windows"]), 5)
+        self.assertLessEqual(len(out["top_windows"]), 10)
 
-    def test_one_per_halfday_bucket(self):
-        # Same morning has overlapping candidate blocks; only one should appear.
+    def test_top_windows_can_include_multiple_fixed_blocks_same_halfday(self):
         sf = [
             _sf_cell("2026-05-01T06:00:00+00:00", 6),
             _sf_cell("2026-05-01T09:00:00+00:00", 6),
             _sf_cell("2026-05-01T12:00:00+00:00", 6),
         ]
-        om = [_om_hour(f"2026-05-01T{h:02d}:00:00+00:00") for h in range(6, 13)]
+        om = [_om_hour(f"2026-05-01T{h:02d}:00:00+00:00") for h in range(4, 13)]
 
-        out = unified.find_next_windows(sf, om, SPOT, "2026-05-01T05:00:00+00:00")
-        windows = out["top_windows"]
-        self.assertGreaterEqual(len(windows), 1)
-        # All starts on the morning of 2026-05-01 should collapse to one bucket.
-        morning_count = sum(
-            1 for w in windows if w["starts_at"].startswith("2026-05-01T") and
-            int(w["starts_at"][11:13]) < 12  # UTC hour < 12 => Lisbon AM (DST +1)
-        )
-        self.assertLessEqual(morning_count, 1)
+        out = unified.find_next_windows(sf, om, SPOT, "2026-05-01T03:00:00+00:00")
+        starts = [window["starts_at"] for window in out["top_windows"]]
+
+        self.assertIn("2026-05-01T07:00:00+00:00", starts)  # local 08:00
+        self.assertIn("2026-05-01T10:00:00+00:00", starts)  # local 11:00
 
     def test_sorted_by_score_desc(self):
         sf, om = _build_week("2026-05-01", days=7, sf_rating=6)
@@ -99,15 +94,74 @@ class TopWindowsTests(unittest.TestCase):
         else:
             self.assertIsNone(out["best_window"])
 
+    def test_top_windows_are_fixed_three_hour_blocks(self):
+        sf, om = _build_week("2026-05-01", days=2, sf_rating=6)
+        out = unified.find_next_windows(sf, om, SPOT, "2026-04-30T23:00:00+00:00")
+
+        self.assertGreater(len(out["top_windows"]), 0)
+        for window in out["top_windows"]:
+            start = datetime.fromisoformat(window["starts_at"])
+            end = datetime.fromisoformat(window["ends_at"])
+            self.assertEqual((end - start).total_seconds() / 3600, 3)
+
+    def test_top_windows_are_subset_of_predictor_windows_by_start_time(self):
+        sf, om = _build_week("2026-05-01", days=3, sf_rating=6)
+        out = unified.find_next_windows(sf, om, SPOT, "2026-04-30T23:00:00+00:00")
+
+        predictor_starts = {window["starts_at"] for window in out["predictor_windows"]}
+        for window in out["top_windows"]:
+            self.assertIn(window["starts_at"], predictor_starts)
+
+    def test_top_windows_rank_by_window_score_not_each_hour_threshold(self):
+        scored = []
+        for hour, score in ((7, 4.8), (8, 8.0), (9, 8.0), (10, 5.4), (11, 5.4), (12, 5.4)):
+            scored.append({
+                "dt": datetime.fromisoformat(f"2026-05-01T{hour:02d}:00:00+00:00"),
+                "decider_score": score,
+                "tier": unified.TIER_GREEN,
+                "has_hard_gate": False,
+                "window_eligible": True,
+                "blocked_by": [],
+                "step_hours": 1,
+            })
+
+        blocks = unified._top_windows(scored, unified._hour_is_decent, datetime.fromisoformat("2026-05-01T05:00:00+00:00"), SPOT)
+
+        self.assertEqual(blocks[0][0]["dt"].isoformat(), "2026-05-01T07:00:00+00:00")
+
+    def test_top_windows_follow_visible_window_score_with_source_gate_context(self):
+        scored = []
+        for hour, score, source in (
+            (7, 6.0, "gfs_shape"),
+            (8, 6.1, None),
+            (9, 6.2, None),
+            (10, 5.4, None),
+            (11, 5.4, None),
+            (12, 5.4, None),
+        ):
+            scored.append({
+                "dt": datetime.fromisoformat(f"2026-05-01T{hour:02d}:00:00+00:00"),
+                "decider_score": score,
+                "tier": unified.TIER_RED if source else unified.TIER_GREEN,
+                "has_hard_gate": bool(source),
+                "hard_gate": {"blocked": bool(source), "reason": "shape", "source": source},
+                "window_eligible": True,
+                "blocked_by": [source] if source else [],
+                "step_hours": 1,
+            })
+
+        blocks = unified._top_windows(scored, unified._hour_is_decent, datetime.fromisoformat("2026-05-01T05:00:00+00:00"), SPOT)
+
+        self.assertEqual(blocks[0][0]["dt"].isoformat(), "2026-05-01T07:00:00+00:00")
+
 
 class PredictorWindowsTests(unittest.TestCase):
     def test_predictor_includes_low_scores_when_top_windows_are_empty(self):
         sf = [
-            _sf_cell("2026-05-01T06:00:00+00:00", 1),
-            _sf_cell("2026-05-01T09:00:00+00:00", 1),
+            _sf_cell("2026-05-01T04:00:00+00:00", 1),
         ]
 
-        out = unified.find_next_windows(sf, [], SPOT, "2026-05-01T05:00:00+00:00")
+        out = unified.find_next_windows(sf, [], SPOT, "2026-05-01T03:00:00+00:00")
 
         self.assertEqual(out["top_windows"], [])
         self.assertGreater(len(out["predictor_windows"]), 0)
@@ -124,7 +178,7 @@ class PredictorWindowsTests(unittest.TestCase):
 
         self.assertGreater(len(out["predictor_windows"]), 5)
         self.assertEqual(starts, sorted(starts))
-        self.assertLessEqual(len(out["top_windows"]), 5)
+        self.assertLessEqual(len(out["top_windows"]), 10)
 
     def test_predictor_uses_fixed_non_overlapping_three_hour_blocks(self):
         om = [
@@ -152,6 +206,29 @@ class PredictorWindowsTests(unittest.TestCase):
         self.assertGreater(len(window["score_components"]), 0)
         self.assertIn("sf_score", window["score_components"][0])
         self.assertIn("om_score", window["score_components"][0])
+
+    def test_predictor_carries_ibi_scores_when_hourly_rows_exist(self):
+        sf, om = _build_week("2026-05-01", days=1, sf_rating=6)
+        ibi_hourly = [
+            {
+                **_om_hour(f"2026-05-01T{hour:02d}:00:00+00:00"),
+                "wind_speed": None,
+                "wind_direction": None,
+            }
+            for hour in range(6, 21)
+        ]
+
+        out = unified.find_next_windows(
+            sf,
+            om,
+            SPOT,
+            "2026-04-30T23:00:00+00:00",
+            ibi_hourly=ibi_hourly,
+        )
+        components = out["predictor_windows"][0]["score_components"]
+
+        self.assertTrue(any(component["ibi_score"] is not None for component in components))
+        self.assertNotIn("ibi", out["predictor_windows"][0]["confidence_detail"]["missing_sources"])
 
 
 class RequireSfTimelineTests(unittest.TestCase):
@@ -189,7 +266,7 @@ class RequireSfTimelineTests(unittest.TestCase):
 
     def test_supplementary_source_gap_does_not_veto_window(self):
         # SF + OM both say good; Surfline rows have no wave data (score will be None).
-        # Two consecutive good hours are needed to form a window (min_hours=2).
+        # A complete fixed 3-hour block is needed to form a top window.
         sf = [
             _sf_cell("2026-05-01T06:00:00+00:00", 5),
             _sf_cell("2026-05-01T09:00:00+00:00", 5),
@@ -197,11 +274,13 @@ class RequireSfTimelineTests(unittest.TestCase):
         om = [
             self._good_om_hour("2026-05-01T07:00:00+00:00"),
             self._good_om_hour("2026-05-01T08:00:00+00:00"),
+            self._good_om_hour("2026-05-01T09:00:00+00:00"),
         ]
         # Surfline rows with empty/missing fields — _score_model_row returns None.
         surfline_hourly = [
             {"timestamp_utc": "2026-05-01T07:00:00+00:00"},
             {"timestamp_utc": "2026-05-01T08:00:00+00:00"},
+            {"timestamp_utc": "2026-05-01T09:00:00+00:00"},
         ]
 
         out = unified.find_next_windows(

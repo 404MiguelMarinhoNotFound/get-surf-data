@@ -3,6 +3,12 @@ import unittest
 from pathlib import Path
 
 HTML_PATH = Path(__file__).parent.parent / "public" / "index.html"
+LEGACY_HTML_PATH = (
+    Path(__file__).parent.parent
+    / "docs"
+    / "legacy"
+    / "public-index-before-selected-window-technical-details.html"
+)
 
 
 class MobileHTMLTest(unittest.TestCase):
@@ -109,6 +115,78 @@ class MobileHTMLTest(unittest.TestCase):
             "heroCard.dataset.predictorFocusPending = '1';\n    _renderHeroSlot(heroCard);",
         ):
             self.assertIn(required, self.html)
+
+    def test_selected_window_practical_renderer_replaces_diagnostic_chips(self):
+        for required in (
+            "function renderWindowPracticalDetail",
+            "class=\"window-practical-detail\"",
+            "class=\"window-practical-card\"",
+            "class=\"window-practical-meter\"",
+            "data-tone=\"${escapeHtml(ind.tone || 'unknown')}\"",
+            "aria-live=\"polite\"",
+            "renderWindowPracticalDetail(windows[safeIdx])",
+        ):
+            self.assertIn(required, self.html)
+
+        match = re.search(
+            r"function renderWindowPracticalDetail\(win\) \{(?P<body>.*?)\n\}",
+            self.html,
+            re.S,
+        )
+        self.assertIsNotNone(match, "Selected-window practical renderer must exist")
+        body = match.group("body")
+        self.assertNotIn("predictorSourceChips", body)
+        self.assertNotIn("predictorFactorChips", body)
+        self.assertNotIn("confidence_detail", body)
+        self.assertNotIn("missing_sources", body)
+
+    def test_selected_window_technical_details_replace_old_card_drawer(self):
+        for required in (
+            "function renderWindowTechnicalDetail",
+            "function renderTechnicalIndicator",
+            "function renderTechnicalHourTable",
+            "class=\"window-technical-detail\"",
+            "class=\"window-technical-card\"",
+            "class=\"window-technical-table\"",
+            "class=\"hero-technical-slot\"",
+            "renderWindowTechnicalDetail(windows[safeIdx]",
+            "heroCard.dataset.technicalExpanded",
+            "closest('.hero-toggle-details')",
+            "Show technical details",
+            "Hide technical details",
+            "aria-expanded",
+        ):
+            self.assertIn(required, self.html)
+
+        self.assertNotIn("card.querySelector('.card-details')", self.html)
+        self.assertNotIn("details.hidden = !expanded;", self.html)
+
+        match = re.search(
+            r"function renderCard\(spot, data\) \{(?P<body>.*?)\n\}\n\nfunction friendlyError",
+            self.html,
+            re.S,
+        )
+        self.assertIsNotNone(match, "renderCard body must be present")
+        body = match.group("body")
+        self.assertNotIn("class=\"card-details\"", body)
+        self.assertNotIn("renderSourcesLine(data)", body)
+        self.assertNotIn("renderOmPanel(data)", body)
+        self.assertNotIn("renderGfsPanel(data)", body)
+        self.assertNotIn("renderIbiPanel(data)", body)
+
+    def test_old_card_details_drawer_is_preserved_in_legacy_copy(self):
+        self.assertTrue(LEGACY_HTML_PATH.exists())
+        legacy_html = LEGACY_HTML_PATH.read_text(encoding="utf-8")
+
+        for required in (
+            "class=\"card-details\"",
+            "renderSourcesLine(data)",
+            "renderOmPanel(data)",
+            "renderGfsPanel(data)",
+            "renderIbiPanel(data)",
+            "details.hidden = !expanded;",
+        ):
+            self.assertIn(required, legacy_html)
 
 
 if __name__ == "__main__":

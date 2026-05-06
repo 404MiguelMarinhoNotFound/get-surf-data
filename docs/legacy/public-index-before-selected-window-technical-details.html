@@ -915,148 +915,7 @@
     cursor: pointer;
   }
   .hero-toggle-details:hover { background: rgba(148,163,184,0.08); }
-  .hero-toggle-details:focus-visible {
-    outline: 2px solid var(--accent-bright);
-    outline-offset: 3px;
-  }
-  .window-technical-detail[hidden] { display: none; }
-  .hero-technical-slot {
-    margin-top: 0.55rem;
-  }
-  .window-technical-detail {
-    padding: 0.76rem;
-    border-radius: 8px;
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    background:
-      linear-gradient(180deg, rgba(15, 23, 42, 0.66), rgba(2, 6, 23, 0.36)),
-      rgba(2, 6, 23, 0.30);
-  }
-  .window-technical-detail.is-unavailable {
-    color: var(--text-dim);
-    font-size: 0.74rem;
-    line-height: 1.4;
-  }
-  .window-technical-top {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 0.75rem;
-    margin-bottom: 0.62rem;
-  }
-  .window-technical-eyebrow {
-    margin-bottom: 0.14rem;
-    color: var(--text-faint);
-    font-size: 0.58rem;
-    font-weight: 800;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-  .window-technical-title {
-    margin: 0;
-    color: var(--text);
-    font-family: 'Space Grotesk', 'Inter', sans-serif;
-    font-size: 0.88rem;
-    line-height: 1.2;
-    font-weight: 800;
-  }
-  .window-technical-meta {
-    color: var(--text-dim);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.68rem;
-    font-weight: 700;
-    text-align: right;
-    white-space: nowrap;
-  }
-  .window-technical-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(134px, 1fr));
-    gap: 0.45rem;
-  }
-  .window-technical-card {
-    min-height: 96px;
-    padding: 0.62rem;
-    border-radius: 8px;
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    background: rgba(2, 6, 23, 0.28);
-  }
-  .window-technical-label {
-    margin-bottom: 0.38rem;
-    color: var(--text);
-    font-size: 0.72rem;
-    line-height: 1.15;
-    font-weight: 800;
-  }
-  .window-technical-card dl {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0.22rem 0.5rem;
-    margin: 0;
-  }
-  .window-technical-card dt,
-  .window-technical-table th {
-    color: var(--text-faint);
-    font-size: 0.58rem;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-  .window-technical-card dd {
-    margin: 0;
-    color: var(--text);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.68rem;
-    font-weight: 700;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-  }
-  .window-technical-unit {
-    color: var(--text-faint);
-    font-size: 0.58rem;
-  }
-  .window-technical-missing {
-    color: var(--text-faint);
-  }
-  .window-technical-missing span {
-    margin-left: 0.16rem;
-    color: var(--yellow-bright);
-    font-family: 'Inter', sans-serif;
-    font-size: 0.55rem;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-  .window-technical-table-wrap {
-    margin-top: 0.58rem;
-    overflow-x: auto;
-    border-radius: 8px;
-    border: 1px solid rgba(148, 163, 184, 0.16);
-  }
-  .window-technical-table {
-    width: 100%;
-    min-width: 680px;
-    border-collapse: collapse;
-    background: rgba(2, 6, 23, 0.22);
-  }
-  .window-technical-table th,
-  .window-technical-table td {
-    padding: 0.45rem 0.5rem;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.12);
-    text-align: left;
-    white-space: nowrap;
-  }
-  .window-technical-table td {
-    color: var(--text);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.66rem;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-  }
-  .window-technical-table tbody tr:last-child td { border-bottom: 0; }
-  @media (max-width: 480px) {
-    .window-technical-top { display: grid; }
-    .window-technical-meta { text-align: left; }
-    .window-technical-grid { grid-template-columns: 1fr; }
-  }
+  .card-details[hidden] { display: none; }
 
   .params {
     display: grid;
@@ -2587,139 +2446,9 @@ function renderWindowPracticalDetail(win) {
   </section>`;
 }
 
-function technicalPrecisionForKey(key) {
-  if (key === 'height_m' || key === 'wind_wave_height_m' || key === 'tide_height_m') return 2;
-  if (key === 'period_s' || key === 'power_index' || key === 'wind_speed_kmh') return 1;
-  if (key === 'wind_direction_deg' || key === 'swell_direction_deg') return 0;
-  return 2;
-}
-
-function technicalFieldText(field) {
-  if (!field || field.missing || field.value === null || field.value === undefined || field.value === '') {
-    return `<span class="window-technical-missing">-- <span>missing</span></span>`;
-  }
-  const raw = field.value;
-  const numeric = Number(raw);
-  const value = Number.isFinite(numeric) && String(raw).trim() !== ''
-    ? numeric.toFixed(technicalPrecisionForKey(field.key || ''))
-    : String(raw);
-  const unit = field.unit ? ` <span class="window-technical-unit">${escapeHtml(field.unit)}</span>` : '';
-  return `${escapeHtml(value)}${unit}`;
-}
-
-function technicalFactorText(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return `<span class="window-technical-missing">-- <span>missing</span></span>`;
-  }
-  return numeric.toFixed(2);
-}
-
-function renderTechnicalIndicator(ind) {
-  const fields = Array.isArray(ind && ind.fields) ? ind.fields : [];
-  const rows = fields.map(field => `
-    <dt>${escapeHtml(field.label || field.key || 'value')}</dt>
-    <dd>${technicalFieldText(field)}</dd>`).join('');
-  return `<article class="window-technical-card">
-    <div class="window-technical-label">${escapeHtml((ind && ind.label) || 'Indicator')}</div>
-    <dl>
-      ${rows}
-      <dt>factor</dt>
-      <dd>${technicalFactorText(ind && ind.factor_score_0_1)}</dd>
-    </dl>
-  </article>`;
-}
-
-function technicalHourField(hour, key, unit) {
-  const values = hour && hour.values && typeof hour.values === 'object' ? hour.values : {};
-  const hasValue = Object.prototype.hasOwnProperty.call(values, key);
-  return {
-    key,
-    value: hasValue ? values[key] : null,
-    unit,
-    missing: !hasValue || values[key] === null || values[key] === undefined || values[key] === ''
-  };
-}
-
-function renderTechnicalHourTable(hours) {
-  if (!Array.isArray(hours) || !hours.length) {
-    return `<div class="window-technical-detail is-unavailable" role="status">
-      Hourly technical rows unavailable.
-    </div>`;
-  }
-  const columns = [
-    ['height_m', 'height', 'm'],
-    ['period_s', 'period', 's'],
-    ['wind_speed_kmh', 'wind', 'km/h'],
-    ['wind_wave_height_m', 'chop', 'm'],
-    ['swell_direction_deg', 'swell dir', 'deg'],
-    ['tide_state', 'tide', null],
-  ];
-  const head = columns.map(([, label]) => `<th scope="col">${escapeHtml(label)}</th>`).join('');
-  const rows = hours.map(hour => {
-    const cells = columns.map(([key, , unit]) => `
-      <td>${technicalFieldText(technicalHourField(hour, key, unit))}</td>`).join('');
-    return `<tr>
-      <td>${escapeHtml(hhmmFromIso(hour && hour.starts_at) || '--')}</td>
-      <td>${escapeHtml(predictorScoreText(hour && hour.score))}</td>
-      ${cells}
-    </tr>`;
-  }).join('');
-
-  return `<div class="window-technical-table-wrap">
-    <table class="window-technical-table">
-      <thead>
-        <tr>
-          <th scope="col">time</th>
-          <th scope="col">score</th>
-          ${head}
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-  </div>`;
-}
-
-function renderWindowTechnicalDetail(win, expanded = false) {
-  const hidden = expanded ? '' : ' hidden';
-  const technical = win && win.window_technical;
-
-  if (!technical) {
-    return `<section class="window-technical-detail is-unavailable"${hidden} role="status">
-      Selected-window technical data unavailable: missing_window_technical_payload.
-    </section>`;
-  }
-
-  if (technical.unavailable_reason) {
-    return `<section class="window-technical-detail is-unavailable"${hidden} role="status">
-      Selected-window technical data unavailable: ${escapeHtml(technical.unavailable_reason)}.
-    </section>`;
-  }
-
-  const aggregate = technical.aggregate || {};
-  const cards = (Array.isArray(technical.indicators) ? technical.indicators : [])
-    .map(renderTechnicalIndicator)
-    .join('');
-  const scoreText = predictorScoreText(aggregate.score ?? (win && win.score));
-  const confidence = aggregate.confidence ? `confidence ${aggregate.confidence}` : 'confidence missing';
-
-  return `<section class="window-technical-detail"${hidden} aria-live="polite">
-    <div class="window-technical-top">
-      <div>
-        <div class="window-technical-eyebrow">Selected-window data</div>
-        <h3 class="window-technical-title">${escapeHtml((win && win.label) || 'Surf window')}</h3>
-      </div>
-      <div class="window-technical-meta">${escapeHtml(scoreText)}<br>${escapeHtml(confidence)}</div>
-    </div>
-    <div class="window-technical-grid">${cards}</div>
-    ${renderTechnicalHourTable(technical.hours)}
-  </section>`;
-}
-
-function renderPredictorRibbon(windows, selectedIndex = 0, technicalExpanded = false) {
+function renderPredictorRibbon(windows, selectedIndex = 0) {
   if (!Array.isArray(windows) || !windows.length) return '';
   const safeIdx = Math.max(0, Math.min(selectedIndex, windows.length - 1));
-  const expanded = technicalExpanded === true || technicalExpanded === '1';
   return `<div class="hero-predictor" aria-label="Seven day surf score predictor">
     <div class="hero-predictor-head">
       <div class="hero-predictor-title">7-day predictor</div>
@@ -2729,11 +2458,7 @@ function renderPredictorRibbon(windows, selectedIndex = 0, technicalExpanded = f
       ${windows.map((win, idx) => renderPredictorBar(win, idx, idx === safeIdx)).join('')}
     </div>
     ${renderWindowPracticalDetail(windows[safeIdx])}
-  </div>
-  <button class="hero-toggle-details" type="button" aria-expanded="${expanded ? 'true' : 'false'}">
-    ${expanded ? 'Hide technical details' : 'Show technical details'}
-  </button>
-  <div class="hero-technical-slot">${renderWindowTechnicalDetail(windows[safeIdx], technicalExpanded)}</div>`;
+  </div>`;
 }
 
 function renderUnifiedHero(data) {
@@ -2767,20 +2492,21 @@ function renderUnifiedHero(data) {
   const predictorWindows = Array.isArray(u.predictor_windows) ? u.predictor_windows : [];
   const selectedStart = topWindows.length ? windowStartKey(topWindows[0]) : '';
   const initialPredictorIndex = Math.max(0, findWindowIndexByStart(predictorWindows, selectedStart));
-  const predictorHtml = renderPredictorRibbon(predictorWindows, initialPredictorIndex, false);
+  const predictorHtml = renderPredictorRibbon(predictorWindows, initialPredictorIndex);
   const reason = u.decision_reason || u.agreement_note || '';
   const reasonHtml = reason
     ? `<div class="hero-reason">${escapeHtml(reason)}</div>`
     : '';
 
   const heroState = JSON.stringify({ windows: topWindows, predictorWindows, currentWindowText });
-  return `<div class="hero-card tier-${escapeHtml(tier)}" data-hero-state="${escapeHtml(heroState)}" data-hero-index="0" data-predictor-index="${escapeHtml(String(initialPredictorIndex))}" data-selected-window-start="${escapeHtml(selectedStart)}" data-technical-expanded="0">
+  return `<div class="hero-card tier-${escapeHtml(tier)}" data-hero-state="${escapeHtml(heroState)}" data-hero-index="0" data-predictor-index="${escapeHtml(String(initialPredictorIndex))}" data-selected-window-start="${escapeHtml(selectedStart)}">
     <div class="hero-tier-badge">${escapeHtml(badge)}</div>
     <div class="hero-headline">${escapeHtml(u.decision_headline || 'WAIT FOR A BETTER WINDOW')}</div>
     <div class="hero-summary">${escapeHtml(u.plain_summary || '')}</div>
     ${reasonHtml}
     <div class="hero-window-slot">${windowHtml}</div>
     <div class="hero-predictor-slot">${predictorHtml}</div>
+    <button class="hero-toggle-details" type="button" aria-expanded="false">Show technical details ▾</button>
   </div>`;
 }
 
@@ -2813,7 +2539,6 @@ function _renderHeroSlot(card) {
   const slot = card.querySelector('.hero-window-slot');
   const predictorSlot = card.querySelector('.hero-predictor-slot');
   const selectedStart = card.getAttribute('data-selected-window-start') || '';
-  const technicalExpanded = card.dataset.technicalExpanded === '1';
 
   if (slot) {
     let idx = findWindowIndexByStart(windows, selectedStart);
@@ -2830,7 +2555,7 @@ function _renderHeroSlot(card) {
     let predictorIdx = findWindowIndexByStart(predictorWindows, selectedStart);
     if (predictorIdx === -1) predictorIdx = clampIndex(card.getAttribute('data-predictor-index'), predictorWindows.length);
     card.setAttribute('data-predictor-index', String(predictorIdx));
-    predictorSlot.innerHTML = renderPredictorRibbon(predictorWindows, predictorIdx, technicalExpanded);
+    predictorSlot.innerHTML = renderPredictorRibbon(predictorWindows, predictorIdx);
   }
 
   // Move keyboard focus back onto the carousel container so screen readers
@@ -2879,19 +2604,20 @@ function _predictorStep(card, delta) {
 }
 
 function bindUnifiedHero(card) {
+  const btn = card.querySelector('.hero-toggle-details');
+  if (btn) {
+    btn.addEventListener('click', (e) => {
+      const details = card.querySelector('.card-details');
+      if (!details) return;
+      const expanded = details.hidden;
+      details.hidden = !expanded;
+      e.currentTarget.textContent = expanded ? 'Hide technical details ▴' : 'Show technical details ▾';
+      e.currentTarget.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    });
+  }
+
   // data-hero-state / data-hero-index live on .hero-card, not on the outer .card container
   const heroCard = card.querySelector('.hero-card') || card;
-  if (!('technicalExpanded' in heroCard.dataset)) heroCard.dataset.technicalExpanded = '0';
-  card.addEventListener('click', (e) => {
-    const btn = e.target.closest('.hero-toggle-details');
-    if (!btn || !card.contains(btn)) return;
-    const expanded = heroCard.dataset.technicalExpanded !== '1';
-    heroCard.dataset.technicalExpanded = expanded ? '1' : '0';
-    _renderHeroSlot(heroCard);
-    const currentBtn = heroCard.querySelector('.hero-toggle-details');
-    if (currentBtn) currentBtn.focus({ preventScroll: true });
-  });
-
   const slot = card.querySelector('.hero-window-slot');
   if (slot) {
     slot.addEventListener('click', (e) => {
@@ -2945,6 +2671,10 @@ function renderCard(spot, data) {
   const time = data.fetched_at
     ? new Date(data.fetched_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})
     : '—';
+  const verdictClass = data.verdict || 'empty';
+  const ratingDisplay = (data.rating != null) ? data.rating + '/10' : '—';
+  const tideDisplay = data.tide && data.tide.summary ? data.tide.summary : '—';
+  const detailsHidden = data.unified ? ' hidden' : '';
 
   card.innerHTML = `
     <div class="card-header">
@@ -2952,6 +2682,47 @@ function renderCard(spot, data) {
       <div class="last-sync">synced ${time}</div>
     </div>
     ${renderUnifiedHero(data)}
+    <div class="card-details"${detailsHidden}>
+      <div class="verdict ${verdictClass}">${escapeHtml(data.verdict_text)}</div>
+      <div class="params">
+        <div class="param-label">Height</div><div></div>
+        <div class="param-value">${escapeHtml(fmt(data.height_m, 'm'))}</div>
+        <div class="param-label">Period</div><div></div>
+        <div class="param-value">${escapeHtml(fmt(data.period_s, 's'))}</div>
+        <div class="param-label">Swell from</div><div></div>
+        <div class="param-value">${escapeHtml(fmt(data.swell_direction))}</div>
+        <div class="param-label">Wind</div><div></div>
+        <div class="param-value">${escapeHtml(fmt(data.wind_state))}</div>
+        <div class="param-label">Tide</div><div></div>
+        <div class="param-value tide-value">${escapeHtml(tideDisplay)}</div>
+        <div class="param-label">Site rating</div><div></div>
+        <div class="param-value muted">${escapeHtml(ratingDisplay)}</div>
+      </div>
+      ${renderSourcesLine(data)}
+      ${renderOmPanel(data)}
+      ${renderGfsPanel(data)}
+      ${renderIbiPanel(data)}
+      ${renderForecastStrip(data)}
+      <div class="explanations">
+        <h3>Why?</h3>
+        <ul>
+          ${(data.details || []).map(d => `
+            <li class="${escapeHtml(d.color)}">
+              <span><strong>${escapeHtml(d.label)}:</strong> ${escapeHtml(d.explanation)}</span>
+            </li>`).join('')}
+        </ul>
+      </div>
+      <div class="extras">
+        <span class="extras-info">${
+          data.wetsuit
+            ? ICON_DROPLET + '<span>' + escapeHtml(data.wetsuit) + '</span>'
+            : (data.sea_temp_c != null
+                ? ICON_DROPLET + '<span>' + escapeHtml(data.sea_temp_c) + '°C water</span>'
+                : '')
+        }</span>
+        <a class="url-link" href="${escapeHtml(spot.url)}" target="_blank" rel="noopener">View on surf-forecast.com ${ICON_EXTERNAL}</a>
+      </div>
+    </div>
     ${renderWebcam(spot)}`;
   bindUnifiedHero(card);
   bindForecastStripInteractions(card, data);

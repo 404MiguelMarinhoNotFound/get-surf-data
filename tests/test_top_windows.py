@@ -207,6 +207,210 @@ class PredictorWindowsTests(unittest.TestCase):
         self.assertIn("sf_score", window["score_components"][0])
         self.assertIn("om_score", window["score_components"][0])
 
+    def test_windows_include_practical_payload(self):
+        sf, om = _build_week("2026-05-01", days=1, sf_rating=6)
+
+        out = unified.find_next_windows(sf, om, SPOT, "2026-04-30T23:00:00+00:00")
+        window = out["predictor_windows"][0]
+        practical = window["window_practical"]
+
+        self.assertIsNone(practical["unavailable_reason"])
+        self.assertIn("summary", practical)
+        self.assertEqual(
+            [indicator["id"] for indicator in practical["indicators"]],
+            ["wave_fit", "energy", "wind", "shape", "direction", "tide"],
+        )
+
+    def test_practical_payload_has_no_source_breakdown(self):
+        sf, om = _build_week("2026-05-01", days=1, sf_rating=6)
+
+        out = unified.find_next_windows(sf, om, SPOT, "2026-04-30T23:00:00+00:00")
+        practical = out["predictor_windows"][0]["window_practical"]
+        forbidden_keys = {
+            "sf", "surfline", "windguru", "om", "gfs", "ibi",
+            "sf_score", "surfline_score", "windguru_score", "om_score",
+            "gfs_score", "ibi_score", "source_scores", "factor_scores",
+        }
+
+        def walk_keys(value):
+            if isinstance(value, dict):
+                for key, nested in value.items():
+                    yield key
+                    yield from walk_keys(nested)
+            elif isinstance(value, list):
+                for item in value:
+                    yield from walk_keys(item)
+
+        self.assertTrue(forbidden_keys.isdisjoint(set(walk_keys(practical))))
+
+    def test_practical_payload_marks_unavailable_without_factor_data(self):
+        block = [{
+            "dt": datetime.fromisoformat("2026-05-01T07:00:00+00:00"),
+            "decider_score": 6.5,
+            "tier": unified.TIER_GREEN,
+            "confidence": "high",
+            "confidence_detail": {"source_count": 1, "source_score_spread": 0.0, "missing_sources": []},
+            "blocked_by": [],
+            "step_hours": 1,
+        }]
+
+        window = unified._window_payload(
+            block,
+            datetime.fromisoformat("2026-05-01T05:00:00+00:00"),
+            SPOT,
+            level="improver",
+        )
+
+        self.assertEqual(window["window_practical"]["unavailable_reason"], "no_weighted_factor_scores")
+        self.assertEqual(window["window_practical"]["indicators"], [])
+
+    def test_practical_indicators_use_weighted_model_factors(self):
+        block = [{
+            "dt": datetime.fromisoformat("2026-05-01T07:00:00+00:00"),
+            "decider_score": 6.5,
+            "tier": unified.TIER_GREEN,
+            "confidence": "high",
+            "confidence_detail": {"source_count": 2, "source_score_spread": 0.0, "missing_sources": []},
+            "factor_scores": {
+                "om": {"height": 1.0, "power": 1.0, "period": 1.0, "wind": 1.0, "chop": 1.0, "direction": 1.0},
+                "gfs": {"height": 0.0, "power": 0.0, "period": 0.0, "wind": 0.0, "chop": 0.0, "direction": 0.0},
+                "tide": 1.0,
+            },
+            "weights": {"om": 0.75, "gfs": 0.25},
+            "blocked_by": [],
+            "step_hours": 1,
+        }]
+
+        window = unified._window_payload(
+            block,
+            datetime.fromisoformat("2026-05-01T05:00:00+00:00"),
+            SPOT,
+            level="improver",
+        )
+        indicators = {item["id"]: item for item in window["window_practical"]["indicators"]}
+
+        self.assertAlmostEqual(indicators["wave_fit"]["score_0_1"], 0.75)
+        self.assertEqual(indicators["wave_fit"]["status"], "Good fit")
+        self.assertAlmostEqual(indicators["energy"]["score_0_1"], 0.75)
+
+    def test_windows_include_selected_window_technical_payload(self):
+        sf, om = _build_week("2026-05-01", days=1, sf_rating=6)
+
+        out = unified.find_next_windows(sf, om, SPOT, "2026-04-30T23:00:00+00:00")
+        windows = [out["best_window"], *out["top_windows"], *out["predictor_windows"]]
+
+        for window in [item for item in windows if item]:
+            technical = window["window_technical"]
+            self.assertEqual(technical["version"], "selected_window_technical_v1")
+            self.assertIsNone(technical["unavailable_reason"])
+            self.assertIsInstance(technical["aggregate"], dict)
+            self.assertGreater(len(technical["hours"]), 0)
+            self.assertIn("score_components", window)
+            self.assertIn("window_practical", window)
+
+    def test_technical_payload_has_validation_indicators(self):
+        sf, om = _build_week("2026-05-01", days=1, sf_rating=6)
+
+        out = unified.find_next_windows(sf, om, SPOT, "2026-04-30T23:00:00+00:00")
+        technical = out["predictor_windows"][0]["window_technical"]
+
+        self.assertEqual(
+            [indicator["label"] for indicator in technical["indicators"]],
+            ["Wave fit", "Energy", "Wind", "Shape", "Direction", "Tide"],
+        )
+        for indicator in technical["indicators"]:
+            self.assertIn("factor_score_0_1", indicator)
+            self.assertIn("fields", indicator)
+            self.assertGreater(len(indicator["fields"]), 0)
+            self.assertNotIn("explanation", indicator)
+
+    def test_technical_payload_uses_weighted_raw_values(self):
+        block = [{
+            "dt": datetime.fromisoformat("2026-05-01T07:00:00+00:00"),
+            "decider_score": 6.5,
+            "tier": unified.TIER_GREEN,
+            "confidence": "high",
+            "confidence_detail": {"source_count": 2, "source_score_spread": 0.0, "missing_sources": []},
+            "om_row": {
+                "wave_height": 2.0,
+                "wave_period": 10.0,
+                "swell_height": 2.0,
+                "swell_period": 10.0,
+                "swell_direction": 260.0,
+                "wind_speed": 8.0,
+                "wind_direction": 10.0,
+                "wind_wave_height": 0.10,
+            },
+            "gfs_row": {
+                "wave_height": 1.0,
+                "wave_period": 14.0,
+                "swell_height": 1.0,
+                "swell_period": 14.0,
+                "swell_direction": 220.0,
+                "wind_speed": 20.0,
+                "wind_direction": 190.0,
+                "wind_wave_height": 0.50,
+            },
+            "factor_scores": {
+                "om": {"height": 1.0, "power": 1.0, "period": 1.0, "wind": 1.0, "chop": 1.0, "direction": 1.0},
+                "gfs": {"height": 0.0, "power": 0.0, "period": 0.0, "wind": 0.0, "chop": 0.0, "direction": 0.0},
+                "tide": 1.0,
+            },
+            "weights": {"om": 0.75, "gfs": 0.25},
+            "tide": {"color": "green", "state": "rising", "height_m": 1.2},
+            "blocked_by": [],
+            "step_hours": 1,
+        }]
+
+        window = unified._window_payload(
+            block,
+            datetime.fromisoformat("2026-05-01T05:00:00+00:00"),
+            SPOT,
+            level="improver",
+        )
+        values = window["window_technical"]["aggregate"]["values"]
+        self.assertAlmostEqual(values["height_m"], 1.75)
+        self.assertAlmostEqual(values["period_s"], 11.0)
+        self.assertAlmostEqual(values["wind_speed_kmh"], 11.0)
+
+        block[0]["weights"] = {"om": 0.25, "gfs": 0.75}
+        reweighted = unified._window_payload(
+            block,
+            datetime.fromisoformat("2026-05-01T05:00:00+00:00"),
+            SPOT,
+            level="improver",
+        )
+        reweighted_values = reweighted["window_technical"]["aggregate"]["values"]
+        self.assertAlmostEqual(reweighted_values["height_m"], 1.25)
+        self.assertAlmostEqual(reweighted_values["period_s"], 13.0)
+        self.assertAlmostEqual(reweighted_values["wind_speed_kmh"], 17.0)
+
+    def test_technical_payload_marks_unavailable_without_raw_or_factor_data(self):
+        block = [{
+            "dt": datetime.fromisoformat("2026-05-01T07:00:00+00:00"),
+            "decider_score": 6.5,
+            "tier": unified.TIER_GREEN,
+            "confidence": "high",
+            "confidence_detail": {"source_count": 1, "source_score_spread": 0.0, "missing_sources": []},
+            "blocked_by": [],
+            "step_hours": 1,
+        }]
+
+        window = unified._window_payload(
+            block,
+            datetime.fromisoformat("2026-05-01T05:00:00+00:00"),
+            SPOT,
+            level="improver",
+        )
+
+        self.assertEqual(
+            window["window_technical"]["unavailable_reason"],
+            "no_selected_window_technical_data",
+        )
+        self.assertIsNone(window["window_technical"]["aggregate"])
+        self.assertEqual(window["window_technical"]["indicators"], [])
+        self.assertEqual(window["window_technical"]["hours"], [])
+
     def test_predictor_carries_ibi_scores_when_hourly_rows_exist(self):
         sf, om = _build_week("2026-05-01", days=1, sf_rating=6)
         ibi_hourly = [

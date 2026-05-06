@@ -1726,11 +1726,11 @@ def _top_windows(scored_hours, predicate, now_dt, spot, limit=TOP_WINDOW_LIMIT):
     return [item["block"] for item in candidates[:limit]]
 
 
-def _predictor_windows(scored_hours, now_dt, spot):
+def _predictor_windows(scored_hours, now_dt, spot, level="improver"):
     """Return fixed, non-overlapping local forecast blocks for the hero ribbon."""
     payloads = []
     for block in _fixed_three_hour_blocks(scored_hours, spot):
-        payload = _window_payload(block, now_dt, spot)
+        payload = _window_payload(block, now_dt, spot, level=level)
         if payload is not None:
             payloads.append(payload)
     return payloads
@@ -1861,7 +1861,532 @@ def _score_components(block):
     return components
 
 
-def _window_payload(block, now_dt, spot):
+def _min_present(*values):
+    numeric = [_to_float(value) for value in values if _to_float(value) is not None]
+    return min(numeric) if numeric else None
+
+
+def _avg_present(values):
+    numeric = [_to_float(value) for value in values if _to_float(value) is not None]
+    if not numeric:
+        return None
+    return sum(numeric) / len(numeric)
+
+
+def _window_weighted_factor_scores(block):
+    """Blend per-source factor scores into one practical view for the window."""
+    factors = ("height", "power", "period", "wind", "chop", "direction", "tide")
+    source_order = ("om", "surfline", "windguru", "gfs", "ibi")
+    blended = {}
+
+    for factor in factors:
+        values = []
+        for row in block:
+            factor_scores = row.get("factor_scores")
+            if not isinstance(factor_scores, dict):
+                continue
+            weights = row.get("weights") if isinstance(row.get("weights"), dict) else {}
+            numerator = 0.0
+            denominator = 0.0
+            for source in source_order:
+                source_factors = factor_scores.get(source)
+                if not isinstance(source_factors, dict):
+                    continue
+                value = _to_float(source_factors.get(factor))
+                weight = _to_float(weights.get(source))
+                if value is None or weight is None or weight <= 0:
+                    continue
+                numerator += value * weight
+                denominator += weight
+            if denominator > 0:
+                values.append(numerator / denominator)
+            elif factor == "tide":
+                tide_value = _to_float(factor_scores.get("tide"))
+                if tide_value is not None:
+                    values.append(tide_value)
+        blended[factor] = _avg_present(values)
+
+    return {key: value for key, value in blended.items() if value is not None}
+
+
+_MODEL_SOURCE_ORDER = ("om", "surfline", "windguru", "gfs", "ibi")
+_MODEL_ROW_KEY = {
+    "om": "om_row",
+    "surfline": "surfline_row",
+    "windguru": "windguru_row",
+    "gfs": "gfs_row",
+    "ibi": "ibi_row",
+}
+_TECHNICAL_NUMERIC_FIELDS = (
+    "height_m",
+    "period_s",
+    "power_index",
+    "wind_speed_kmh",
+    "wind_wave_height_m",
+    "tide_height_m",
+)
+_TECHNICAL_DIRECTION_FIELDS = ("wind_direction_deg", "swell_direction_deg")
+_TECHNICAL_FIELD_PRECISION = {
+    "height_m": 2,
+    "period_s": 1,
+    "power_index": 1,
+    "wind_speed_kmh": 1,
+    "wind_direction_deg": 0,
+    "wind_wave_height_m": 2,
+    "swell_direction_deg": 0,
+    "tide_height_m": 2,
+}
+
+
+def _rounded_technical_value(key, value):
+    value = _to_float(value)
+    if value is None:
+        return None
+    precision = _TECHNICAL_FIELD_PRECISION.get(key, 2)
+    return round(value, precision)
+
+
+def _direction_mean(weighted_values):
+    """Weighted circular mean for compass degrees."""
+    x = 0.0
+    y = 0.0
+    total = 0.0
+    for value, weight in weighted_values:
+        value = _to_float(value)
+        weight = _to_float(weight)
+        if value is None or weight is None or weight <= 0:
+            continue
+        radians = math.radians(value % 360)
+        x += math.cos(radians) * weight
+        y += math.sin(radians) * weight
+        total += weight
+    if total <= 0 or (abs(x) < 1e-9 and abs(y) < 1e-9):
+        return None
+    return (math.degrees(math.atan2(y, x)) + 360) % 360
+
+
+def _model_raw_values(row):
+    normalized = _normalize_model_row(row)
+    height = _to_float(normalized.get("swell_height"))
+    if height is None:
+        height = _to_float(normalized.get("wave_height"))
+    period = _to_float(normalized.get("swell_period"))
+    if period is None:
+        period = _to_float(normalized.get("wave_period"))
+    power = (height * height * period) if height is not None and period is not None else None
+    return {
+        "height_m": height,
+        "period_s": period,
+        "power_index": power,
+        "wind_speed_kmh": _to_float(normalized.get("wind_speed")),
+        "wind_direction_deg": _to_float(normalized.get("wind_direction")),
+        "wind_wave_height_m": _to_float(normalized.get("wind_wave_height")),
+        "swell_direction_deg": _to_float(normalized.get("swell_direction")),
+    }
+
+
+def _weighted_raw_values_for_row(row):
+    weights = row.get("weights") if isinstance(row.get("weights"), dict) else {}
+    raw = {}
+    direction_values = {key: [] for key in _TECHNICAL_DIRECTION_FIELDS}
+
+    for field in _TECHNICAL_NUMERIC_FIELDS:
+        if field == "tide_height_m":
+            continue
+        numerator = 0.0
+        denominator = 0.0
+        for source in _MODEL_SOURCE_ORDER:
+            model_row = row.get(_MODEL_ROW_KEY[source])
+            if not isinstance(model_row, dict):
+                continue
+            weight = _to_float(weights.get(source))
+            if weight is None or weight <= 0:
+                continue
+            value = _model_raw_values(model_row).get(field)
+            if value is None:
+                continue
+            numerator += value * weight
+            denominator += weight
+        if denominator > 0:
+            raw[field] = numerator / denominator
+
+    for source in _MODEL_SOURCE_ORDER:
+        model_row = row.get(_MODEL_ROW_KEY[source])
+        if not isinstance(model_row, dict):
+            continue
+        weight = _to_float(weights.get(source))
+        if weight is None or weight <= 0:
+            continue
+        values = _model_raw_values(model_row)
+        for field in _TECHNICAL_DIRECTION_FIELDS:
+            value = values.get(field)
+            if value is not None:
+                direction_values[field].append((value, weight))
+
+    for field, values in direction_values.items():
+        direction = _direction_mean(values)
+        if direction is not None:
+            raw[field] = direction
+
+    tide = row.get("tide") if isinstance(row.get("tide"), dict) else {}
+    tide_height = _to_float(tide.get("height_m"))
+    if tide_height is not None:
+        raw["tide_height_m"] = tide_height
+    tide_state = tide.get("state") or tide.get("color")
+    if tide_state:
+        raw["tide_state"] = str(tide_state)
+
+    return {
+        key: (_rounded_technical_value(key, value) if key != "tide_state" else value)
+        for key, value in raw.items()
+        if value is not None
+    }
+
+
+def _window_weighted_raw_values(block):
+    per_hour = [_weighted_raw_values_for_row(row) for row in block]
+    blended = {}
+    for field in _TECHNICAL_NUMERIC_FIELDS:
+        values = [hour.get(field) for hour in per_hour if hour.get(field) is not None]
+        average = _avg_present(values)
+        if average is not None:
+            blended[field] = _rounded_technical_value(field, average)
+
+    for field in _TECHNICAL_DIRECTION_FIELDS:
+        values = [(hour.get(field), 1.0) for hour in per_hour if hour.get(field) is not None]
+        direction = _direction_mean(values)
+        if direction is not None:
+            blended[field] = _rounded_technical_value(field, direction)
+
+    tide_states = [hour.get("tide_state") for hour in per_hour if hour.get("tide_state")]
+    if tide_states:
+        blended["tide_state"] = max(tide_states, key=tide_states.count)
+    return blended
+
+
+def _row_weighted_factor_scores(row):
+    factor_scores = row.get("factor_scores")
+    if not isinstance(factor_scores, dict):
+        return {}
+    weights = row.get("weights") if isinstance(row.get("weights"), dict) else {}
+    blended = {}
+    for factor in ("height", "power", "period", "wind", "chop", "direction"):
+        numerator = 0.0
+        denominator = 0.0
+        for source in _MODEL_SOURCE_ORDER:
+            source_factors = factor_scores.get(source)
+            if not isinstance(source_factors, dict):
+                continue
+            value = _to_float(source_factors.get(factor))
+            weight = _to_float(weights.get(source))
+            if value is None or weight is None or weight <= 0:
+                continue
+            numerator += value * weight
+            denominator += weight
+        if denominator > 0:
+            blended[factor] = round(numerator / denominator, 3)
+    tide = _to_float(factor_scores.get("tide"))
+    if tide is not None:
+        blended["tide"] = round(tide, 3)
+    return blended
+
+
+_TECHNICAL_FIELD_LABELS = {
+    "height_m": ("height", "m"),
+    "period_s": ("period", "s"),
+    "power_index": ("power", None),
+    "wind_speed_kmh": ("speed", "km/h"),
+    "wind_direction_deg": ("wind dir", "deg"),
+    "wind_wave_height_m": ("chop", "m"),
+    "swell_direction_deg": ("swell dir", "deg"),
+    "tide_state": ("state", None),
+    "tide_height_m": ("height", "m"),
+}
+
+_TECHNICAL_INDICATORS = (
+    ("wave_fit", "Wave fit", "height", ("height_m",)),
+    ("energy", "Energy", ("power", "period"), ("period_s", "power_index")),
+    ("wind", "Wind", "wind", ("wind_speed_kmh", "wind_direction_deg")),
+    ("shape", "Shape", "chop", ("wind_wave_height_m",)),
+    ("direction", "Direction", "direction", ("swell_direction_deg",)),
+    ("tide", "Tide", "tide", ("tide_state", "tide_height_m")),
+)
+
+
+def _technical_field(values, key):
+    label, unit = _TECHNICAL_FIELD_LABELS[key]
+    value = values.get(key)
+    return {
+        "key": key,
+        "label": label,
+        "value": value,
+        "unit": unit,
+        "missing": value is None,
+    }
+
+
+def _technical_factor_value(factors, factor_key):
+    if isinstance(factor_key, tuple):
+        return _min_present(*(factors.get(key) for key in factor_key))
+    return factors.get(factor_key)
+
+
+def _technical_indicator(indicator_id, label, factor_key, field_keys, raw, factors):
+    factor = _technical_factor_value(factors, factor_key)
+    return {
+        "id": indicator_id,
+        "label": label,
+        "factor_score_0_1": round(factor, 3) if factor is not None else None,
+        "fields": [_technical_field(raw, key) for key in field_keys],
+    }
+
+
+def _technical_hour(row):
+    raw = _weighted_raw_values_for_row(row)
+    factors = _row_weighted_factor_scores(row)
+    return {
+        "starts_at": _iso(row.get("dt")),
+        "score": round(row["decider_score"], 1) if row.get("decider_score") is not None else None,
+        "values": raw,
+        "factor_scores": factors,
+    }
+
+
+def _has_technical_data(raw, factors):
+    return bool(raw) or any(value is not None for value in factors.values())
+
+
+def _window_technical(block, level):
+    raw = _window_weighted_raw_values(block)
+    factors = _window_weighted_factor_scores(block)
+    if not _has_technical_data(raw, factors):
+        return {
+            "version": "selected_window_technical_v1",
+            "unavailable_reason": "no_selected_window_technical_data",
+            "aggregate": None,
+            "indicators": [],
+            "hours": [],
+        }
+
+    indicators = [
+        _technical_indicator(indicator_id, label, factor_key, field_keys, raw, factors)
+        for indicator_id, label, factor_key, field_keys in _TECHNICAL_INDICATORS
+    ]
+    return {
+        "version": "selected_window_technical_v1",
+        "unavailable_reason": None,
+        "aggregate": {
+            "score": round(_harmonic_mean(row.get("decider_score") for row in block), 1)
+            if _harmonic_mean(row.get("decider_score") for row in block) is not None
+            else None,
+            "confidence": _window_confidence(block),
+            "values": raw,
+            "factor_scores": {key: round(value, 3) for key, value in factors.items()},
+        },
+        "indicators": indicators,
+        "hours": [_technical_hour(row) for row in block],
+    }
+
+
+def _has_practical_factor_data(blended):
+    return any(
+        blended.get(key) is not None
+        for key in ("height", "power", "period", "wind", "chop", "direction")
+    )
+
+
+def _tone_for_score(score):
+    value = _to_float(score)
+    if value is None:
+        return "unknown"
+    if value >= 0.72:
+        return "good"
+    if value >= 0.52:
+        return "ok"
+    if value >= 0.32:
+        return "caution"
+    return "poor"
+
+
+_PRACTICAL_STATUS = {
+    "wave_fit": {
+        "good": "Good fit",
+        "ok": "Workable size",
+        "caution": "Marginal size",
+        "poor": "Poor fit",
+        "unknown": "No size read",
+    },
+    "energy": {
+        "good": "Good push",
+        "ok": "Enough energy",
+        "caution": "Uneven energy",
+        "poor": "Off target",
+        "unknown": "No energy read",
+    },
+    "wind": {
+        "good": "Clean",
+        "ok": "Manageable",
+        "caution": "Textured",
+        "poor": "Messy",
+        "unknown": "No wind read",
+    },
+    "shape": {
+        "good": "Organised",
+        "ok": "Some texture",
+        "caution": "Choppy",
+        "poor": "Broken up",
+        "unknown": "No shape read",
+    },
+    "direction": {
+        "good": "On target",
+        "ok": "Acceptable angle",
+        "caution": "Needs wrap",
+        "poor": "Wrong angle",
+        "unknown": "No direction read",
+    },
+    "tide": {
+        "good": "In window",
+        "ok": "Usable tide",
+        "caution": "Awkward tide",
+        "poor": "Tide problem",
+        "unknown": "No tide read",
+    },
+}
+
+
+_PRACTICAL_EXPLANATIONS = {
+    "wave_fit": {
+        "good": "The blended height sits in the useful range for this level.",
+        "ok": "There should be enough wave to work with, with some compromise.",
+        "caution": "Size is near the edge of the useful range for this level.",
+        "poor": "The size is either too small or too much for this level.",
+        "unknown": "The models did not expose enough height detail for this card.",
+    },
+    "energy": {
+        "good": "Period and power should give the waves useful push.",
+        "ok": "There is rideable energy, but it may not feel especially strong.",
+        "caution": "Expect either weak waves or power that needs care.",
+        "poor": "The period and power are not lining up well for this level.",
+        "unknown": "The models did not expose enough period and power detail.",
+    },
+    "wind": {
+        "good": "Wind should help keep the face reasonably clean.",
+        "ok": "Wind is not perfect, but it should stay manageable.",
+        "caution": "Wind may add texture and make timing less predictable.",
+        "poor": "Wind is likely to make the session messy.",
+        "unknown": "The models did not expose enough wind detail for this card.",
+    },
+    "shape": {
+        "good": "The swell signal is organised with little wind-sea interference.",
+        "ok": "The lines should hold together, though not perfectly clean.",
+        "caution": "Wind chop or mixed swell may break up the lines.",
+        "poor": "The wave shape is likely too broken up to trust.",
+        "unknown": "The models did not expose enough chop detail for this card.",
+    },
+    "direction": {
+        "good": "The swell angle is close to what this break wants.",
+        "ok": "The angle should still reach the spot, with some loss.",
+        "caution": "The spot may need wrap, so sets can be inconsistent.",
+        "poor": "The swell angle is not feeding this break well.",
+        "unknown": "The models did not expose enough direction detail.",
+    },
+    "tide": {
+        "good": "The tide is inside the preferred window for the break.",
+        "ok": "The tide is usable, but not the cleanest part of the setup.",
+        "caution": "The tide is a compromise for this spot.",
+        "poor": "The tide is working against the break.",
+        "unknown": "No tide fit was available for this window.",
+    },
+}
+
+
+def _indicator(indicator_id, label, score, level):
+    value = _to_float(score)
+    tone = _tone_for_score(value)
+    status = _PRACTICAL_STATUS[indicator_id][tone]
+    explanation = _PRACTICAL_EXPLANATIONS[indicator_id][tone]
+    if value is not None and indicator_id in ("wave_fit", "energy"):
+        explanation = explanation.replace("this level", f"{level} surfers")
+    return {
+        "id": indicator_id,
+        "label": label,
+        "status": status,
+        "tone": tone,
+        "score_0_1": round(max(0.0, min(1.0, value)), 2) if value is not None else None,
+        "explanation": explanation,
+    }
+
+
+def _practical_confidence_label(confidence):
+    if confidence == "high":
+        return "Steady signal"
+    if confidence == "mixed":
+        return "Mixed signal"
+    if confidence and confidence.endswith("_only"):
+        return "Limited signal"
+    return "Signal unclear"
+
+
+def _practical_headline(block, blended):
+    score = _harmonic_mean(row.get("decider_score") for row in block)
+    if score is None:
+        return "Selected surf window"
+    if score >= SCORE_GOLD:
+        return "Strong window"
+    if score >= SCORE_GREEN:
+        return "Good window"
+    if score >= SCORE_BEST_WINDOW:
+        return "Surfable window"
+    return "Low-quality window"
+
+
+def _practical_summary(block, indicators, level):
+    score = _harmonic_mean(row.get("decider_score") for row in block)
+    scored = [item for item in indicators if item.get("score_0_1") is not None]
+    weakest = min(scored, key=lambda item: item["score_0_1"]) if scored else None
+    if score is not None and score >= SCORE_GREEN:
+        base = f"The blended call says this is worth planning around for {level} surfers."
+    elif score is not None and score >= SCORE_BEST_WINDOW:
+        base = f"The blended call says this is surfable for {level} surfers, with tradeoffs."
+    else:
+        base = f"The blended call says this is a weak or compromised window for {level} surfers."
+    if weakest and weakest["score_0_1"] < 0.52:
+        return f"{base} Main watch-out: {weakest['label'].lower()} is {weakest['status'].lower()}."
+    if weakest:
+        return f"{base} The weakest part is {weakest['label'].lower()}, but it is still readable."
+    return base
+
+
+def _window_practical(block, level):
+    level = level or "improver"
+    blended = _window_weighted_factor_scores(block)
+    if not _has_practical_factor_data(blended):
+        return {
+            "headline": "Practical explanation unavailable",
+            "summary": "This window was scored, but factor-level data was not available.",
+            "confidence_label": _practical_confidence_label(_window_confidence(block)),
+            "unavailable_reason": "no_weighted_factor_scores",
+            "indicators": [],
+        }
+
+    indicators = [
+        _indicator("wave_fit", "Wave fit", blended.get("height"), level),
+        _indicator("energy", "Energy", _min_present(blended.get("power"), blended.get("period")), level),
+        _indicator("wind", "Wind", blended.get("wind"), level),
+        _indicator("shape", "Shape", blended.get("chop"), level),
+        _indicator("direction", "Direction", blended.get("direction"), level),
+        _indicator("tide", "Tide", blended.get("tide"), level),
+    ]
+    return {
+        "headline": _practical_headline(block, blended),
+        "summary": _practical_summary(block, indicators, level),
+        "confidence_label": _practical_confidence_label(_window_confidence(block)),
+        "unavailable_reason": None,
+        "indicators": indicators,
+    }
+
+
+def _window_payload(block, now_dt, spot, level="improver"):
     if not block:
         return None
     start = block[0]["dt"]
@@ -1891,6 +2416,8 @@ def _window_payload(block, now_dt, spot):
         "confidence_detail": _window_confidence_detail(block),
         "score_components": _score_components(block),
         "blocked_by": blocked_by,
+        "window_practical": _window_practical(block, level),
+        "window_technical": _window_technical(block, level),
     }
 
 
@@ -1994,10 +2521,10 @@ def find_next_windows(rating_timeline, om_hourly, spot, sf_now_utc, tide=None,
         }
 
     top_blocks = _top_windows(scored, _hour_is_decent, now_dt, spot, limit=TOP_WINDOW_LIMIT)
-    top_windows = [_window_payload(block, now_dt, spot) for block in top_blocks]
+    top_windows = [_window_payload(block, now_dt, spot, level=level) for block in top_blocks]
     best_window = top_windows[0] if top_windows else None
     gold_blocks = _top_windows(scored, _hour_is_gold, now_dt, spot, limit=1)
-    gold_window = _window_payload(gold_blocks[0], now_dt, spot) if gold_blocks else None
+    gold_window = _window_payload(gold_blocks[0], now_dt, spot, level=level) if gold_blocks else None
 
     return {
         "now_tier": _now_tier(scored, now_dt),
@@ -2005,7 +2532,7 @@ def find_next_windows(rating_timeline, om_hourly, spot, sf_now_utc, tide=None,
         "next_decent_window": best_window,
         "next_gold_window": gold_window,
         "top_windows": top_windows,
-        "predictor_windows": _predictor_windows(scored, now_dt, spot),
+        "predictor_windows": _predictor_windows(scored, now_dt, spot, level=level),
         "gold_count_7d": _count_fixed_blocks(scored, _hour_is_gold, spot),
         "current_window_ends": _current_window_end(scored, now_dt),
     }

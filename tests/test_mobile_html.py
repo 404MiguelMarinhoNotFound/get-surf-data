@@ -105,16 +105,20 @@ class MobileHTMLTest(unittest.TestCase):
             "function _predictorStep",
             "closest('.hero-predictor-bar')",
             "heroCard.dataset.predictorFocusPending = '1'",
-            "predictor.scrollIntoView",
+            "html { overflow-x: hidden;",
+            ".hero-predictor-track {",
+            "function scrollPredictorBarIntoTrack",
+            "track.scrollLeft",
             "function windowStartKey",
             "function findWindowIndexByStart",
             "data-selected-window-start",
             "Next best 3-hour surf windows",
             "card.setAttribute('data-selected-window-start'",
-            "card.dataset.heroFocusPending = '1';\n  card.dataset.predictorFocusPending = '1';",
-            "heroCard.dataset.predictorFocusPending = '1';\n    _renderHeroSlot(heroCard);",
+            "card.dataset.heroFocusPending = '1';\n  card.dataset.predictorFocusPending = '0';",
         ):
             self.assertIn(required, self.html)
+        self.assertNotIn("inline: 'center'", self.html)
+        self.assertNotIn('inline: "center"', self.html)
 
     def test_selected_window_practical_renderer_replaces_diagnostic_chips(self):
         for required in (

@@ -63,7 +63,8 @@
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
-  html, body { background: var(--bg-base); }
+  html { overflow-x: hidden; background: var(--bg-base); }
+  body { background: var(--bg-base); }
 
   body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -178,6 +179,8 @@
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-card);
     padding: 1.4rem;
+    min-width: 0;
+    max-width: 100%;
     box-shadow: var(--shadow-card);
     transition: transform 0.3s var(--ease), box-shadow 0.3s var(--ease), border-color 0.3s var(--ease);
     animation: card-in 0.5s var(--ease) both;
@@ -302,6 +305,8 @@
     padding: 1.1rem 1.2rem;
     border-radius: 14px;
     margin-bottom: 1rem;
+    min-width: 0;
+    max-width: 100%;
   }
   .hero-card.tier-gold {
     background: linear-gradient(135deg, rgba(251,191,36,0.18), rgba(245,158,11,0.10));
@@ -631,6 +636,12 @@
     margin-top: 0.85rem;
     padding-top: 0.75rem;
     border-top: 1px solid rgba(148,163,184,0.14);
+    min-width: 0;
+    max-width: 100%;
+  }
+  .hero-predictor-slot {
+    min-width: 0;
+    max-width: 100%;
   }
   .hero-predictor-head {
     display: flex;
@@ -657,6 +668,9 @@
     grid-auto-flow: column;
     grid-auto-columns: minmax(44px, 1fr);
     gap: 0.35rem;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     overflow-x: auto;
     overscroll-behavior-x: contain;
     scroll-snap-type: x proximity;
@@ -2806,6 +2820,24 @@ function _heroState(card) {
   }
 }
 
+function scrollPredictorBarIntoTrack(bar) {
+  const track = bar && bar.closest('.hero-predictor-track');
+  if (!track) return false;
+
+  const barLeft = bar.offsetLeft;
+  const barRight = barLeft + bar.offsetWidth;
+  const visibleLeft = track.scrollLeft;
+  const visibleRight = visibleLeft + track.clientWidth;
+
+  if (barLeft < visibleLeft) {
+    track.scrollLeft = barLeft;
+  } else if (barRight > visibleRight) {
+    track.scrollLeft = barRight - track.clientWidth;
+  }
+
+  return true;
+}
+
 function _renderHeroSlot(card) {
   const state = _heroState(card);
   const windows = Array.isArray(state.windows) ? state.windows : [];
@@ -2844,7 +2876,9 @@ function _renderHeroSlot(card) {
   const predictor = predictorSlot && predictorSlot.querySelector('.hero-predictor-bar[aria-pressed="true"]');
   if (predictor && card.dataset.predictorFocusPending === '1') {
     predictor.focus({ preventScroll: true });
-    predictor.scrollIntoView({ block: 'nearest', inline: 'center' });
+    if (!scrollPredictorBarIntoTrack(predictor)) {
+      throw new Error('predictor_track_missing');
+    }
     card.dataset.predictorFocusPending = '0';
   }
 }
@@ -2859,7 +2893,7 @@ function _heroStep(card, delta) {
   card.setAttribute('data-hero-index', String(next));
   card.setAttribute('data-selected-window-start', windowStartKey(windows[next]));
   card.dataset.heroFocusPending = '1';
-  card.dataset.predictorFocusPending = '1';
+  card.dataset.predictorFocusPending = '0';
   _renderHeroSlot(card);
 }
 
@@ -2934,8 +2968,6 @@ function bindUnifiedHero(card) {
         _predictorStep(heroCard, 1);
       }
     });
-    heroCard.dataset.predictorFocusPending = '1';
-    _renderHeroSlot(heroCard);
   }
 }
 

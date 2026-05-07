@@ -24,12 +24,56 @@ windguru.py                   - Windguru micro.windguru.cz plaintext parser (GFS
 unified_explainer.py          - N-source geometric blend, confidence, hard gates + windowing
 server.py                     - local dev server (port 8765)
 api/spots.py                  - Vercel serverless: GET /api/spots
-api/sync.py                   - Vercel serverless: GET /api/sync?spot=<id>&level=<tier>
+api/sync.py                   - Vercel serverless: cache-read GET /api/sync?spot=<id>&level=<tier>
+api/refresh.py                - Vercel serverless: secured source refresh for cron/backfill
+forecast_sync.py              - shared source fetch + payload builder
+forecast_cache.py             - Neon read/write, staleness, refresh orchestration
 public/index.html             - single-file frontend (vanilla JS)
 spots.json                    - spot config
 ```
 
-No database. `spots.json` is the only persistent config. All six sources are fetched in parallel on each request; Vercel CDN caches responses for 60 seconds (`s-maxage=60`).
+Production uses a latest-only Neon Postgres forecast cache. `spots.json` remains the only persistent spot config. All six sources are fetched in parallel by the refresh path, then `/api/sync` reads cached snapshots from Neon so page loads do not wait on upstream model/scraper calls.
+
+## Neon forecast cache
+
+Production `/api/sync` reads latest snapshots from Neon Postgres. Source fetching is performed by `/api/refresh`, Vercel cron, or `scripts/db_backfill.py`.
+
+The cache is latest-only: refreshes overwrite snapshots, source hourly rows, and window rows. Historical forecast data is intentionally not retained.
+
+Refresh slots are Europe/Lisbon local 00:00 and 12:00. Cron schedules call the refresh endpoint at UTC candidates for winter and summer offsets; the backend performs the final Lisbon due-slot check so duplicate candidate calls do not rewrite fresh data.
+
+Database structure:
+
+- `forecast_refresh_state`: one global row keyed by `cache_key = 'global'`. Columns: `last_success_at`, `last_success_slot_local`, `last_started_at`, `status`, `active_run_id`, `last_error`, `updated_at`. This is the fast stale-check table and records the latest refresh outcome without touching payload rows.
+- `spot_level_snapshot`: primary key `(spot_id, level)`. Columns: `payload jsonb`, `payload_version`, `run_id`, `fetched_at`, `updated_at`. This stores the exact `/api/sync?spot=<id>&level=<tier>` response body for each configured spot and each level: `beginner`, `improver`, `intermediate`, `advanced`.
+- `source_snapshot_latest`: primary key `(spot_id, source)`. Columns: `current_payload jsonb`, `analysis_payload jsonb`, `error`, `fetched_at`, `model_init_utc`, `run_id`, `updated_at`. This stores one latest source payload per spot/source so source-level diagnostics are inspectable without retaining history.
+- `source_hourly_latest`: primary key `(spot_id, source, timestamp_utc)`. Typed columns: `wave_height`, `wave_period`, `wave_direction`, `swell_height`, `swell_period`, `swell_direction`, `swell2_height`, `swell2_period`, `swell2_direction`, `wind_wave_height`, `wind_speed_kmh`, `wind_direction_deg`, `wind_gusts_kmh`, `tide_height_m`, `air_temp_c`, plus `raw jsonb` and `run_id`. Refresh deletes and reinserts touched spot/source rows so the table stays latest-only.
+- `window_latest`: primary key `(spot_id, level, window_type, rank)`. Columns: `starts_at`, `ends_at`, `label`, `score`, `tier`, `payload jsonb`, `run_id`, `updated_at`. `window_type` is `top_windows` or `predictor_windows`; `rank` preserves display order.
+
+Indexes:
+
+- `spot_level_snapshot_updated_at_idx` on `spot_level_snapshot(updated_at)`.
+- `source_hourly_latest_lookup_idx` on `source_hourly_latest(spot_id, source, timestamp_utc)`.
+- `window_latest_lookup_idx` on `window_latest(spot_id, level, window_type, rank)`.
+
+Operations:
+
+```powershell
+python scripts/db_migrate.py
+python scripts/db_backfill.py
+```
+
+Required Vercel env vars:
+
+- `DATABASE_URL` - Neon pooled Postgres URL.
+- `CRON_SECRET` - bearer token required by `/api/refresh`.
+- `COPERNICUS_USER`, `COPERNICUS_PASS` - Copernicus Marine credentials. If unset, IBI fetch returns None and the blend renormalizes to the available sources.
+
+API behavior:
+
+- `GET /api/sync?spot=<id>&level=<tier>` reads `spot_level_snapshot` and preserves the existing response shape. If the DB has no snapshot, it returns `forecast_cache_empty`; it never silently scrapes live sources.
+- `GET /api/refresh` is the Vercel cron endpoint and runs only when the latest Lisbon slot is stale.
+- `POST /api/refresh?force=1` forces a refresh when called with `Authorization: Bearer $CRON_SECRET`.
 
 ## Data sources & blend weights
 
@@ -198,6 +242,8 @@ Expected live caveat: Surf-Forecast may omit the summary-level `rating` value ev
 
 ### Required env vars (Vercel)
 
+- `DATABASE_URL` - Neon pooled Postgres URL for the latest-only forecast cache.
+- `CRON_SECRET` - bearer token required by `/api/refresh`.
 - `COPERNICUS_USER`, `COPERNICUS_PASS` - Copernicus Marine credentials. If unset, IBI fetch returns None and the blend renormalizes to the available sources.
 
 ## API
@@ -209,7 +255,7 @@ Returns the configured spots list.
 ```
 
 ### `GET /api/sync?spot=<id>&level=<tier>`
-Scrapes and grades one spot. `level` is optional, defaults to `improver`.
+Reads the latest cached forecast snapshot for one spot. `level` is optional, defaults to `improver`.
 
 Valid levels: `beginner` | `improver` | `intermediate` | `advanced`
 

@@ -1,5 +1,11 @@
 {
   "functions": {
-    "api/*.py": { "maxDuration": 30 }
-  }
+    "api/*.py": { "maxDuration": 60 }
+  },
+  "crons": [
+    { "path": "/api/refresh", "schedule": "0 0 * 1,2,3,10,11,12 *" },
+    { "path": "/api/refresh", "schedule": "0 12 * 1,2,3,10,11,12 *" },
+    { "path": "/api/refresh", "schedule": "0 23 * 3,4,5,6,7,8,9,10 *" },
+    { "path": "/api/refresh", "schedule": "0 11 * 3,4,5,6,7,8,9,10 *" }
+  ]
 }

@@ -200,7 +200,7 @@
   }
 
   .card-header {
-    display: flex; justify-content: space-between; align-items: baseline;
+    display: flex; justify-content: space-between; align-items: flex-start;
     margin-bottom: 1rem; gap: 1rem;
   }
   .spot-name {
@@ -212,6 +212,37 @@
     font-size: 0.75rem; color: var(--text-dim); white-space: nowrap;
     font-variant-numeric: tabular-nums;
     font-family: 'JetBrains Mono', monospace;
+  }
+  .card-meta {
+    display: flex; flex-direction: column; align-items: flex-end; gap: 0.35rem;
+    min-width: max-content;
+  }
+  .data-status {
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 6px;
+    padding: 0.28rem 0.45rem;
+    background: rgba(2, 6, 23, 0.42);
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .data-status.is-found {
+    border-color: rgba(16, 185, 129, 0.38);
+    background: rgba(16, 185, 129, 0.12);
+    color: var(--green-bright);
+  }
+  .data-status.is-stale {
+    border-color: rgba(251, 191, 36, 0.42);
+    background: rgba(251, 191, 36, 0.12);
+    color: var(--yellow-bright);
+  }
+  .data-status.is-empty {
+    border-color: rgba(248, 113, 113, 0.34);
+    background: rgba(248, 113, 113, 0.1);
+    color: var(--red-bright);
   }
 
   .verdict {
@@ -1452,6 +1483,7 @@
     .brand-icon { width: 38px; height: 38px; }
     .brand-icon svg { width: 20px; height: 20px; }
     .card-header { flex-wrap: wrap; }
+    .card-meta { align-items: flex-start; min-width: 0; }
     .params { font-size: 0.83rem; }
     .explanations li { font-size: 0.83rem; }
   }
@@ -1708,6 +1740,11 @@ async function scrape(spot) {
   const data = await response.json();
   if (data.error) throw new Error(data.error);
   return data;
+}
+
+async function triggerRefresh() {
+  fetch(apiUrl('/api/refresh?force=1'), { method: 'POST', keepalive: true })
+    .catch(() => {});
 }
 
 // =============================================================================
@@ -2818,6 +2855,19 @@ function renderUnifiedHero(data) {
   </div>`;
 }
 
+function renderDataStatus(data) {
+  const unified = data && data.unified ? data.unified : null;
+  if (!unified) {
+    return '<div class="data-status is-empty">no unified data</div>';
+  }
+
+  const topCount = Array.isArray(unified.top_windows) ? unified.top_windows.length : 0;
+  const predictorCount = Array.isArray(unified.predictor_windows) ? unified.predictor_windows.length : 0;
+  const source = data.cache_status ? `cache ${data.cache_status}` : 'live source';
+  const staleText = data.cache_stale ? ' - stale' : '';
+  return `<div class="data-status ${data.cache_stale ? 'is-stale' : 'is-found'}">data found - ${topCount} top - ${predictorCount} predictor - ${escapeHtml(source)}${staleText}</div>`;
+}
+
 function windowStartKey(win) {
   return win && typeof win.starts_at === 'string' ? win.starts_at : '';
 }
@@ -3001,7 +3051,10 @@ function renderCard(spot, data) {
   card.innerHTML = `
     <div class="card-header">
       <div class="spot-name">${escapeHtml(spot.name)}</div>
-      <div class="last-sync">synced ${time}</div>
+      <div class="card-meta">
+        <div class="last-sync">synced ${time}</div>
+        ${renderDataStatus(data)}
+      </div>
     </div>
     ${renderUnifiedHero(data)}
     ${renderWebcam(spot)}`;

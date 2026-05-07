@@ -985,6 +985,8 @@ def secondary_suitability(swell1_height, swell2_height, swell1_dir, swell2_dir):
 
 
 def tide_suitability(tide_color):
+    if tide_color is None:
+        return None
     if tide_color == "red":
         return 0.15
     if tide_color == "yellow":

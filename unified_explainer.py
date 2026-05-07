@@ -638,6 +638,7 @@ def _model_factor_scores(row, spot, level, tide_color=None):
     return {
         key: (round(value, 3) if value is not None else None)
         for key, value in factors.items()
+        if key != "tide" or value is not None
     }
 
 
@@ -645,7 +646,10 @@ def _apply_tide_to_score(score, tide_color):
     score = _clamp_score(score)
     if score is None:
         return None
-    return _clamp_score(score * tide_suitability(tide_color))
+    tide_factor = tide_suitability(tide_color)
+    if tide_factor is None:
+        return score
+    return _clamp_score(score * tide_factor)
 
 
 def _current_om_score(om_analysis, spot, level, tide_color=None):
@@ -1873,6 +1877,11 @@ def _avg_present(values):
     return sum(numeric) / len(numeric)
 
 
+def _row_has_tide_observation(row):
+    tide = row.get("tide") if isinstance(row.get("tide"), dict) else {}
+    return any(tide.get(key) is not None for key in ("state", "height_m", "position", "next_type"))
+
+
 def _window_weighted_factor_scores(block):
     """Blend per-source factor scores into one practical view for the window."""
     factors = ("height", "power", "period", "wind", "chop", "direction", "tide")
@@ -1884,6 +1893,8 @@ def _window_weighted_factor_scores(block):
         for row in block:
             factor_scores = row.get("factor_scores")
             if not isinstance(factor_scores, dict):
+                continue
+            if factor == "tide" and not _row_has_tide_observation(row):
                 continue
             weights = row.get("weights") if isinstance(row.get("weights"), dict) else {}
             numerator = 0.0
@@ -2086,7 +2097,7 @@ def _row_weighted_factor_scores(row):
         if denominator > 0:
             blended[factor] = round(numerator / denominator, 3)
     tide = _to_float(factor_scores.get("tide"))
-    if tide is not None:
+    if tide is not None and _row_has_tide_observation(row):
         blended["tide"] = round(tide, 3)
     return blended
 
@@ -2141,6 +2152,12 @@ def _technical_indicator(indicator_id, label, factor_key, field_keys, raw, facto
     }
 
 
+def _has_indicator_data(raw, factors, factor_key, field_keys):
+    if _technical_factor_value(factors, factor_key) is not None:
+        return True
+    return any(raw.get(key) is not None for key in field_keys)
+
+
 def _technical_hour(row):
     raw = _weighted_raw_values_for_row(row)
     factors = _row_weighted_factor_scores(row)
@@ -2171,6 +2188,7 @@ def _window_technical(block, level):
     indicators = [
         _technical_indicator(indicator_id, label, factor_key, field_keys, raw, factors)
         for indicator_id, label, factor_key, field_keys in _TECHNICAL_INDICATORS
+        if _has_indicator_data(raw, factors, factor_key, field_keys)
     ]
     return {
         "version": "selected_window_technical_v1",
@@ -2375,8 +2393,9 @@ def _window_practical(block, level):
         _indicator("wind", "Wind", blended.get("wind"), level),
         _indicator("shape", "Shape", blended.get("chop"), level),
         _indicator("direction", "Direction", blended.get("direction"), level),
-        _indicator("tide", "Tide", blended.get("tide"), level),
     ]
+    if blended.get("tide") is not None:
+        indicators.append(_indicator("tide", "Tide", blended.get("tide"), level))
     return {
         "headline": _practical_headline(block, blended),
         "summary": _practical_summary(block, indicators, level),

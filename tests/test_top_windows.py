@@ -1,6 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 
+import open_meteo_explainer as omx
 import unified_explainer as unified
 
 
@@ -218,7 +219,7 @@ class PredictorWindowsTests(unittest.TestCase):
         self.assertIn("summary", practical)
         self.assertEqual(
             [indicator["id"] for indicator in practical["indicators"]],
-            ["wave_fit", "energy", "wind", "shape", "direction", "tide"],
+            ["wave_fit", "energy", "wind", "shape", "direction"],
         )
 
     def test_practical_payload_has_no_source_breakdown(self):
@@ -290,7 +291,7 @@ class PredictorWindowsTests(unittest.TestCase):
         indicators = {item["id"]: item for item in window["window_practical"]["indicators"]}
 
         self.assertAlmostEqual(indicators["wave_fit"]["score_0_1"], 0.75)
-        self.assertEqual(indicators["wave_fit"]["status"], "Good fit")
+        self.assertEqual(indicators["wave_fit"]["status"], "Dialed in \U0001f919")
         self.assertAlmostEqual(indicators["energy"]["score_0_1"], 0.75)
 
     def test_windows_include_selected_window_technical_payload(self):
@@ -316,7 +317,7 @@ class PredictorWindowsTests(unittest.TestCase):
 
         self.assertEqual(
             [indicator["label"] for indicator in technical["indicators"]],
-            ["Wave fit", "Energy", "Wind", "Shape", "Direction", "Tide"],
+            ["Wave fit", "Energy", "Wind", "Shape", "Direction"],
         )
         for indicator in technical["indicators"]:
             self.assertIn("factor_score_0_1", indicator)
@@ -369,9 +370,13 @@ class PredictorWindowsTests(unittest.TestCase):
             level="improver",
         )
         values = window["window_technical"]["aggregate"]["values"]
+        technical_ids = [indicator["id"] for indicator in window["window_technical"]["indicators"]]
+        practical_ids = [indicator["id"] for indicator in window["window_practical"]["indicators"]]
         self.assertAlmostEqual(values["height_m"], 1.75)
         self.assertAlmostEqual(values["period_s"], 11.0)
         self.assertAlmostEqual(values["wind_speed_kmh"], 11.0)
+        self.assertIn("tide", technical_ids)
+        self.assertIn("tide", practical_ids)
 
         block[0]["weights"] = {"om": 0.25, "gfs": 0.75}
         reweighted = unified._window_payload(
@@ -384,6 +389,61 @@ class PredictorWindowsTests(unittest.TestCase):
         self.assertAlmostEqual(reweighted_values["height_m"], 1.25)
         self.assertAlmostEqual(reweighted_values["period_s"], 13.0)
         self.assertAlmostEqual(reweighted_values["wind_speed_kmh"], 17.0)
+
+    def test_unknown_tide_does_not_display_as_max_factor(self):
+        block = [{
+            "dt": datetime.fromisoformat("2026-05-03T07:00:00+00:00"),
+            "decider_score": 6.5,
+            "tier": unified.TIER_GREEN,
+            "confidence": "high",
+            "confidence_detail": {"source_count": 1, "source_score_spread": 0.0, "missing_sources": []},
+            "om_row": {
+                "wave_height": 1.0,
+                "wave_period": 12.0,
+                "swell_height": 1.0,
+                "swell_period": 12.0,
+                "swell_direction": 260.0,
+                "wind_speed": 8.0,
+                "wind_direction": 10.0,
+                "wind_wave_height": 0.10,
+            },
+            "factor_scores": {
+                "om": {"height": 1.0, "power": 1.0, "period": 1.0, "wind": 1.0, "chop": 1.0, "direction": 1.0, "tide": 1.0},
+                "tide": 1.0,
+            },
+            "weights": {"om": 1.0},
+            "tide": {"color": None},
+            "blocked_by": [],
+            "step_hours": 1,
+        }]
+        expected_score = omx._score_from_factors({
+            key: value
+            for key, value in omx.hour_factor_scores(
+                block[0]["om_row"],
+                SPOT["optimal_swell_bearing"],
+                SPOT["offshore_bearing"],
+                level="improver",
+                spot=SPOT,
+                tide_color=None,
+            ).items()
+            if key != "tide"
+        })
+
+        window = unified._window_payload(
+            block,
+            datetime.fromisoformat("2026-05-03T05:00:00+00:00"),
+            SPOT,
+            level="improver",
+        )
+
+        technical_ids = [indicator["id"] for indicator in window["window_technical"]["indicators"]]
+        practical_ids = [indicator["id"] for indicator in window["window_practical"]["indicators"]]
+
+        self.assertNotIn("tide", unified._model_factor_scores(block[0]["om_row"], SPOT, "improver"))
+        self.assertAlmostEqual(unified._score_om_hour(block[0]["om_row"], SPOT, "improver", tide_color=None), expected_score)
+        self.assertIsNone(window["window_technical"]["aggregate"]["factor_scores"].get("tide"))
+        self.assertNotIn("tide", technical_ids)
+        self.assertNotIn("tide", practical_ids)
 
     def test_technical_payload_marks_unavailable_without_raw_or_factor_data(self):
         block = [{

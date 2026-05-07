@@ -3157,7 +3157,10 @@ function renderTechnicalHourTable(hours) {
     ['wind_wave_height_m', 'chop', 'm'],
     ['swell_direction_deg', 'swell dir', 'deg'],
     ['tide_state', 'tide', null],
-  ];
+  ].filter(([key]) => key !== 'tide_state' || hours.some(hour => {
+    const values = hour && hour.values && typeof hour.values === 'object' ? hour.values : {};
+    return values.tide_state !== null && values.tide_state !== undefined && values.tide_state !== '';
+  }));
   const head = columns.map(([, label]) => `<th scope="col">${escapeHtml(label)}</th>`).join('');
   const rows = hours.map(hour => {
     const cells = columns.map(([key, , unit]) => `
@@ -3723,7 +3726,7 @@ syncAll();
   <div class="score-info-panel">
     <button class="score-info-close" id="score-info-close" aria-label="Close guide">✕</button>
     <h2 class="score-info-heading">Reading the score</h2>
-    <p class="score-info-intro">The score blends wave height, period, wind, swell direction, and tide from 6 data sources into one number — 0 to 10. Here's what each colour actually means on the water.</p>
+    <p class="score-info-intro">The score blends wave height, period, wind, swell direction, and tide when available into one number — 0 to 10. Here's what each colour actually means on the water.</p>
     <div class="score-info-tier" data-tier="gold">
       <div class="score-info-tier-label">🔥 7.5 and above — Firing</div>
       <p>Everything's lined up at once. Good swell height, clean period, wind cooperating — or better yet, light offshore grooming the face. Think 1.2–1.8m at 12–14 seconds with cross-shore or offshore wind. You'll get proper faces, some punch on the sets, and waves that reward commitment. These sessions don't happen every week. When you see gold, move things around and go.</p>

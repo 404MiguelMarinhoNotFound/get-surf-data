@@ -3254,12 +3254,14 @@ function renderPredictorRibbon(windows, selectedIndex = 0, technicalExpanded = f
   return `<div class="hero-predictor" aria-label="Next 7 days surf predictor">
     <div class="hero-predictor-head">
       <div class="hero-predictor-title">Next 7 days</div>
-      <div class="hero-predictor-legend" aria-hidden="true">
-        <span class="hero-predictor-legend-dot" data-tier="gold">●</span>&thinsp;7.5+
-        <span class="hero-predictor-legend-dot" data-tier="green">●</span>&thinsp;6.2+
-        <span class="hero-predictor-legend-dot" data-tier="surfable">●</span>&thinsp;5+
-        <span class="hero-predictor-legend-dot" data-tier="meh">●</span>&thinsp;4.4+
-        <span class="hero-predictor-legend-dot" data-tier="low">●</span>&thinsp;Low
+      <div style="display:flex;align-items:center;gap:0.38rem;">
+        <div class="hero-predictor-legend" aria-hidden="true">
+          <span class="hero-predictor-legend-dot" data-tier="gold">●</span>&thinsp;7.5+
+          <span class="hero-predictor-legend-dot" data-tier="green">●</span>&thinsp;6.2+
+          <span class="hero-predictor-legend-dot" data-tier="surfable">●</span>&thinsp;5+
+          <span class="hero-predictor-legend-dot" data-tier="meh">●</span>&thinsp;4.4+
+          <span class="hero-predictor-legend-dot" data-tier="low">●</span>&thinsp;Low
+        </div>
         <button class="score-info-btn" aria-label="What do these scores mean?" aria-controls="score-info-overlay">i</button>
       </div>
     </div>

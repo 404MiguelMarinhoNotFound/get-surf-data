@@ -3,6 +3,7 @@
 import copy
 import json
 import threading
+import time
 from pathlib import Path
 
 import scraper
@@ -21,6 +22,7 @@ import windguru
 ROOT = Path(__file__).resolve().parent
 SPOTS = json.loads((ROOT / "spots.json").read_text(encoding="utf-8"))
 ALL_LEVELS = ("beginner", "improver", "intermediate", "advanced")
+SOURCE_FETCH_BUDGET_SECONDS = 35.0
 
 
 def get_spot(spot_id):
@@ -107,20 +109,25 @@ def fetch_sources_for_spot(spot):
         except Exception as e:
             results["gfs"] = _source(error=str(e))
 
-    threads = [
-        threading.Thread(target=fetch_sf),
-        threading.Thread(target=fetch_surfline),
-        threading.Thread(target=fetch_windguru),
-        threading.Thread(target=fetch_om),
-        threading.Thread(target=fetch_gfs),
-        threading.Thread(target=fetch_ibi),
+    workers = [
+        ("sf", fetch_sf),
+        ("surfline", fetch_surfline),
+        ("windguru", fetch_windguru),
+        ("om", fetch_om),
+        ("gfs", fetch_gfs),
+        ("ibi", fetch_ibi),
     ]
-    for thread in threads:
+    threads = [(name, threading.Thread(target=target, daemon=True)) for name, target in workers]
+    deadline = time.monotonic() + SOURCE_FETCH_BUDGET_SECONDS
+    for _name, thread in threads:
         thread.start()
-    for thread, timeout in zip(threads, (25, 15, 15, 15, 15, 15)):
-        thread.join(timeout=timeout)
+    for name, thread in threads:
+        remaining = max(0.0, deadline - time.monotonic())
+        thread.join(timeout=remaining)
+        if thread.is_alive() and results[name].get("data") is None and not results[name].get("error"):
+            results[name] = _source(error=f"{name} fetch timed out after {SOURCE_FETCH_BUDGET_SECONDS:.0f}s")
 
-    return results
+    return copy.deepcopy(results)
 
 
 def build_payload(spot, sources, level=explainer.DEFAULT_LEVEL):

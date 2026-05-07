@@ -2608,6 +2608,22 @@ function technicalPrecisionForKey(key) {
   return 2;
 }
 
+function compassLabelFromDegrees(deg) {
+  const numeric = Number(deg);
+  if (!Number.isFinite(numeric)) return '';
+  const labels = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+  const normalized = ((numeric % 360) + 360) % 360;
+  return labels[Math.round(normalized / 22.5) % labels.length];
+}
+
+function technicalDirectionText(field, numeric, value) {
+  const label = compassLabelFromDegrees(numeric);
+  const unit = field.unit ? ` <span class="window-technical-unit">${escapeHtml(field.unit)}</span>` : '';
+  return label
+    ? `${escapeHtml(label)} ${escapeHtml(value)}${unit}`
+    : `${escapeHtml(value)}${unit}`;
+}
+
 function technicalFieldText(field) {
   if (!field || field.missing || field.value === null || field.value === undefined || field.value === '') {
     return `<span class="window-technical-missing">-- <span>missing</span></span>`;
@@ -2617,6 +2633,9 @@ function technicalFieldText(field) {
   const value = Number.isFinite(numeric) && String(raw).trim() !== ''
     ? numeric.toFixed(technicalPrecisionForKey(field.key || ''))
     : String(raw);
+  if ((field.key === 'wind_direction_deg' || field.key === 'swell_direction_deg') && Number.isFinite(numeric)) {
+    return technicalDirectionText(field, numeric, value);
+  }
   const unit = field.unit ? ` <span class="window-technical-unit">${escapeHtml(field.unit)}</span>` : '';
   return `${escapeHtml(value)}${unit}`;
 }
@@ -2665,6 +2684,7 @@ function renderTechnicalHourTable(hours) {
     ['height_m', 'height', 'm'],
     ['period_s', 'period', 's'],
     ['wind_speed_kmh', 'wind', 'km/h'],
+    ['wind_direction_deg', 'wind dir', 'deg'],
     ['wind_wave_height_m', 'chop', 'm'],
     ['swell_direction_deg', 'swell dir', 'deg'],
     ['tide_state', 'tide', null],

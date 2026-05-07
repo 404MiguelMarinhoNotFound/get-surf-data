@@ -102,6 +102,87 @@ def _first(row, *keys):
     return None
 
 
+def _window_has_tide_values(window):
+    technical = window.get("window_technical") if isinstance(window, dict) else None
+    aggregate = technical.get("aggregate") if isinstance(technical, dict) else None
+    values = aggregate.get("values") if isinstance(aggregate, dict) else {}
+    if isinstance(values, dict) and (
+        values.get("tide_state") not in (None, "")
+        or values.get("tide_height_m") not in (None, "")
+    ):
+        return True
+
+    hours = technical.get("hours") if isinstance(technical, dict) else []
+    if isinstance(hours, list):
+        for hour in hours:
+            hour_values = hour.get("values") if isinstance(hour, dict) else {}
+            if isinstance(hour_values, dict) and (
+                hour_values.get("tide_state") not in (None, "")
+                or hour_values.get("tide_height_m") not in (None, "")
+            ):
+                return True
+    return False
+
+
+def _strip_missing_tide_from_window(window):
+    if not isinstance(window, dict) or _window_has_tide_values(window):
+        return window
+
+    practical = window.get("window_practical")
+    if isinstance(practical, dict) and isinstance(practical.get("indicators"), list):
+        practical["indicators"] = [
+            item for item in practical["indicators"]
+            if not (isinstance(item, dict) and item.get("id") == "tide")
+        ]
+
+    technical = window.get("window_technical")
+    if isinstance(technical, dict):
+        aggregate = technical.get("aggregate")
+        if isinstance(aggregate, dict):
+            factors = aggregate.get("factor_scores")
+            if isinstance(factors, dict):
+                factors.pop("tide", None)
+        if isinstance(technical.get("indicators"), list):
+            technical["indicators"] = [
+                item for item in technical["indicators"]
+                if not (isinstance(item, dict) and item.get("id") == "tide")
+            ]
+        if isinstance(technical.get("hours"), list):
+            for hour in technical["hours"]:
+                if isinstance(hour, dict) and isinstance(hour.get("factor_scores"), dict):
+                    hour["factor_scores"].pop("tide", None)
+
+    for component in window.get("score_components", []) or []:
+        if not isinstance(component, dict):
+            continue
+        component["tide"] = None
+        factor_scores = component.get("factor_scores")
+        if not isinstance(factor_scores, dict):
+            continue
+        factor_scores["tide"] = None
+        for source_factors in factor_scores.values():
+            if isinstance(source_factors, dict):
+                source_factors.pop("tide", None)
+    return window
+
+
+def sanitize_cached_payload(payload):
+    """Normalize old cached snapshots whose missing tide was stored as max tide."""
+    unified = payload.get("unified") if isinstance(payload, dict) else None
+    if not isinstance(unified, dict):
+        return payload
+
+    for key in ("best_window", "next_decent_window", "next_gold_window"):
+        _strip_missing_tide_from_window(unified.get(key))
+
+    for key in ("top_windows", "predictor_windows"):
+        windows = unified.get(key)
+        if isinstance(windows, list):
+            for window in windows:
+                _strip_missing_tide_from_window(window)
+    return payload
+
+
 def hourly_db_row(spot_id, source, run_id, row):
     return {
         "spot_id": spot_id,
@@ -162,6 +243,7 @@ def read_cached_payload(spot_id, level):
     if not row:
         return None
     payload = dict(row["payload"])
+    sanitize_cached_payload(payload)
     payload["cache_status"] = state.get("status")
     payload["cache_updated_at"] = _iso(row.get("updated_at"))
     payload["cache_stale"] = is_stale(utc_now(), state)

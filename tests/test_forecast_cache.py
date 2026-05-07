@@ -81,6 +81,53 @@ class ForecastCacheReadTests(unittest.TestCase):
         self.assertEqual(payload["spot_id"], "carcavelos")
         self.assertEqual(payload["level"], "improver")
 
+    def test_sanitizes_legacy_missing_tide_window_payload(self):
+        from forecast_cache import sanitize_cached_payload
+
+        window = {
+            "window_practical": {
+                "indicators": [{"id": "wave_fit"}, {"id": "tide"}],
+            },
+            "window_technical": {
+                "aggregate": {
+                    "values": {"height_m": 1.2},
+                    "factor_scores": {"height": 0.8, "tide": 1.0},
+                },
+                "indicators": [{"id": "wave_fit"}, {"id": "tide"}],
+                "hours": [
+                    {
+                        "values": {"height_m": 1.2},
+                        "factor_scores": {"height": 0.8, "tide": 1.0},
+                    }
+                ],
+            },
+            "score_components": [
+                {
+                    "tide": None,
+                    "factor_scores": {
+                        "om": {"height": 0.8, "tide": 1.0},
+                        "tide": 1.0,
+                    },
+                }
+            ],
+        }
+        payload = {"unified": {"predictor_windows": [window]}}
+
+        sanitize_cached_payload(payload)
+
+        self.assertEqual(
+            [item["id"] for item in window["window_practical"]["indicators"]],
+            ["wave_fit"],
+        )
+        self.assertEqual(
+            [item["id"] for item in window["window_technical"]["indicators"]],
+            ["wave_fit"],
+        )
+        self.assertNotIn("tide", window["window_technical"]["aggregate"]["factor_scores"])
+        self.assertNotIn("tide", window["window_technical"]["hours"][0]["factor_scores"])
+        self.assertIsNone(window["score_components"][0]["factor_scores"]["tide"])
+        self.assertNotIn("tide", window["score_components"][0]["factor_scores"]["om"])
+
 
 if __name__ == "__main__":
     unittest.main()

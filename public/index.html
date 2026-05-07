@@ -776,38 +776,125 @@
     color: var(--text-faint);
     font-weight: 800;
   }
-  .hero-predictor-count {
+  .hero-predictor-legend {
+    display: flex;
+    align-items: center;
+    gap: 0.38rem;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 0.66rem;
+    font-size: 0.58rem;
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.01em;
+  }
+  .hero-predictor-legend-dot { font-size: 0.55rem; line-height: 1; }
+  .hero-predictor-legend-dot[data-tier="gold"]     { color: var(--yellow-bright); }
+  .hero-predictor-legend-dot[data-tier="green"]    { color: var(--green-bright); }
+  .hero-predictor-legend-dot[data-tier="surfable"] { color: var(--accent-bright); }
+  .hero-predictor-legend-dot[data-tier="low"]      { color: rgba(148,163,184,0.45); }
+
+  /* ── Day strip ── */
+  .hero-predictor-days {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 0.28rem;
+    width: 100%;
+    margin-bottom: 0.45rem;
+  }
+  .hero-predictor-day-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0.32rem 0.1rem 0.22rem;
+    cursor: pointer;
+    touch-action: manipulation;
+    border: 1px solid rgba(125, 211, 252, 0.12);
+    border-radius: 8px;
+    background: rgba(2, 6, 23, 0.22);
+    color: var(--text-dim);
+    transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+    min-width: 0;
+  }
+  .hero-predictor-day-card:hover,
+  .hero-predictor-day-card:focus-visible {
+    border-color: rgba(125, 211, 252, 0.34);
+    background: rgba(2, 6, 23, 0.34);
+    box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.10);
+  }
+  .hero-predictor-day-card[aria-selected="true"] {
+    border-color: rgba(125, 211, 252, 0.54);
+    background: rgba(6, 182, 212, 0.07);
+    box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.16), inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  .hero-predictor-day-card.is-empty {
+    opacity: 0.32;
+    cursor: default;
+    pointer-events: none;
+  }
+  .hpdc-weekday {
+    font-size: 0.52rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--text-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .hero-predictor-day-card[aria-selected="true"] .hpdc-weekday { color: var(--accent-bright); }
+  .hpdc-date {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.58rem;
     color: var(--text-dim);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
-  .hero-predictor-track {
+  .hpdc-meter {
+    width: 80%;
+    height: 3px;
+    border-radius: 2px;
+    background: rgba(15, 42, 67, 0.56);
+    overflow: hidden;
+    margin: 0.06rem 0;
+  }
+  .hpdc-fill {
+    display: block;
+    height: 100%;
+    border-radius: 2px;
+    width: var(--score-pct, 0%);
+  }
+  .hpdc-fill[data-tier="gold"]     { background: var(--yellow-bright); box-shadow: 0 0 5px rgba(251,191,36,0.55); }
+  .hpdc-fill[data-tier="green"]    { background: var(--green-bright);  box-shadow: 0 0 5px rgba(16,185,129,0.45); }
+  .hpdc-fill[data-tier="surfable"] { background: var(--accent-bright); box-shadow: 0 0 5px rgba(34,211,238,0.35); }
+  .hpdc-fill[data-tier="low"]      { background: rgba(148,163,184,0.38); }
+  .hpdc-score {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-dim);
+    line-height: 1;
+  }
+  .hpdc-score[data-tier="gold"]     { color: var(--yellow-bright); }
+  .hpdc-score[data-tier="green"]    { color: var(--green-bright); }
+  .hpdc-score[data-tier="surfable"] { color: var(--accent-bright); }
+  .hpdc-gold-star { font-size: 0.52rem; line-height: 1; color: var(--yellow-bright); }
+
+  /* ── Hour strip ── */
+  .hero-predictor-hours {
     display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(44px, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 0.35rem;
     width: 100%;
-    max-width: 100%;
-    min-width: 0;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scroll-snap-type: x proximity;
-    padding: 0.1rem 0 0.45rem;
+    margin-bottom: 0.1rem;
   }
-  .hero-predictor-track::-webkit-scrollbar { height: 7px; }
-  .hero-predictor-track::-webkit-scrollbar-thumb {
-    background: rgba(125, 211, 252, 0.18);
-    border-radius: 999px;
-  }
-  .hero-predictor-bar {
-    min-width: 0;
-    height: 72px;
-    padding: 0.32rem 0.28rem;
-    display: grid;
-    grid-template-rows: 1fr auto;
-    gap: 0.2rem;
-    align-items: stretch;
+  .hero-predictor-hour-bar {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.18rem;
+    padding: 0.45rem 0.2rem 0.35rem;
     cursor: pointer;
     touch-action: manipulation;
     border: 1px solid rgba(125, 211, 252, 0.14);
@@ -815,102 +902,79 @@
     background: rgba(2, 6, 23, 0.24);
     color: var(--text-dim);
     position: relative;
-    scroll-snap-align: start;
     transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+    min-width: 0;
   }
-  .hero-predictor-bar:hover,
-  .hero-predictor-bar:focus-visible {
+  .hero-predictor-hour-bar:hover,
+  .hero-predictor-hour-bar:focus-visible {
     border-color: rgba(125, 211, 252, 0.38);
     background: rgba(2, 6, 23, 0.36);
     box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.10);
   }
-  .hero-predictor-bar[aria-pressed="true"] {
+  .hero-predictor-hour-bar[aria-pressed="true"] {
     border-color: rgba(125, 211, 252, 0.54);
     box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.18), inset 0 1px 0 rgba(255,255,255,0.07);
   }
-  .hero-predictor-meter {
-    min-height: 0;
-    display: grid;
-    align-items: end;
-    border-radius: 6px;
+  .hphb-time {
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: var(--text);
+    text-align: center;
+    white-space: nowrap;
+    line-height: 1.2;
+  }
+  .hphb-meter {
+    width: 100%;
+    min-height: 36px;
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+    border-radius: 5px;
     overflow: hidden;
     background: rgba(15, 42, 67, 0.56);
   }
-  .hero-predictor-fill {
+  .hphb-fill {
+    width: 100%;
+    border-radius: 5px 5px 0 0;
     height: max(4px, var(--score-pct, 0%));
-    border-radius: 6px 6px 0 0;
-    box-shadow: 0 0 16px rgba(148, 163, 184, 0.18);
   }
-  .hero-predictor-fill[data-tier="gold"] {
+  .hphb-fill[data-tier="gold"] {
     background: linear-gradient(180deg, var(--yellow-bright), rgba(251,191,36,0.50));
     box-shadow: 0 0 18px rgba(251,191,36,0.34);
   }
-  .hero-predictor-fill[data-tier="green"] {
+  .hphb-fill[data-tier="green"] {
     background: linear-gradient(180deg, var(--green-bright), rgba(16,185,129,0.48));
     box-shadow: 0 0 16px rgba(16,185,129,0.28);
   }
-  .hero-predictor-fill[data-tier="surfable"] {
+  .hphb-fill[data-tier="surfable"] {
     background: linear-gradient(180deg, var(--accent-bright), rgba(34,211,238,0.42));
     box-shadow: 0 0 16px rgba(34,211,238,0.24);
   }
-  .hero-predictor-fill[data-tier="low"] {
+  .hphb-fill[data-tier="low"] {
     background: linear-gradient(180deg, rgba(148,163,184,0.58), rgba(100,116,139,0.30));
     box-shadow: none;
   }
-  .hero-predictor-labels {
-    display: grid;
-    gap: 0.02rem;
-    min-width: 0;
+  .hphb-score {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
     text-align: center;
-    line-height: 1.05;
+    color: var(--text-dim);
+    line-height: 1;
   }
-  .hero-predictor-day,
-  .hero-predictor-time {
+  .hphb-score[data-tier="gold"]     { color: var(--yellow-bright); }
+  .hphb-score[data-tier="green"]    { color: var(--green-bright); }
+  .hphb-score[data-tier="surfable"] { color: var(--accent-bright); }
+  .hphb-blocked {
+    font-size: 0.5rem;
+    color: rgba(248, 113, 113, 0.75);
+    text-align: center;
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .hero-predictor-day {
-    font-size: 0.58rem;
-    color: var(--text-faint);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-weight: 700;
-  }
-  .hero-predictor-time {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.62rem;
-    color: var(--text);
-    font-variant-numeric: tabular-nums;
-  }
-  .hero-predictor-tooltip {
-    position: absolute;
-    left: 50%;
-    bottom: calc(100% + 0.45rem);
-    width: min(230px, 72vw);
-    padding: 0.55rem 0.6rem;
-    border-radius: 8px;
-    background: rgba(2, 6, 23, 0.96);
-    border: 1px solid rgba(125, 211, 252, 0.24);
-    color: var(--text-dim);
-    box-shadow: 0 18px 42px -24px rgba(2, 6, 23, 0.95);
-    font-size: 0.68rem;
-    line-height: 1.35;
-    opacity: 0;
-    pointer-events: none;
-    transform: translate(-50%, 4px);
-    transition: opacity 0.16s ease, transform 0.16s var(--ease);
-    z-index: 25;
-  }
-  .hero-predictor-tooltip strong {
-    display: block;
-    color: var(--text);
-    margin-bottom: 0.08rem;
-  }
-  .hero-predictor-bar:hover .hero-predictor-tooltip,
-  .hero-predictor-bar:focus-visible .hero-predictor-tooltip {
-    opacity: 1;
-    transform: translate(-50%, 0);
+    max-width: 100%;
+    line-height: 1.2;
   }
   .window-practical-detail {
     margin-top: 0.55rem;
@@ -1550,7 +1614,9 @@
     .hero-headline { font-size: 1.25rem; }
     .hero-window { grid-template-columns: 1fr; }
     .hero-window-score { justify-self: start; }
-    .hero-predictor-track { grid-auto-columns: minmax(40px, 46px); }
+    .hero-predictor-days { gap: 0.2rem; }
+    .hero-predictor-hours { gap: 0.22rem; }
+    .hphb-time { font-size: 0.55rem; }
     .hero-predictor-detail-top { display: grid; }
     .hero-score-tooltip {
       left: 0;
@@ -1577,7 +1643,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     body::before { animation: none; }
-    .card, .verdict, .site-credit-link, .site-credit-link::before, .site-credit-text, .hero-predictor-bar, .hero-predictor-tooltip { animation: none !important; transition: none !important; }
+    .card, .verdict, .site-credit-link, .site-credit-link::before, .site-credit-text, .hero-predictor-day-card, .hero-predictor-hour-bar { animation: none !important; transition: none !important; }
     .card:hover { transform: none; }
     .live-dot { animation: none; box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.16); }
     .spinner { animation-duration: 1.4s; }
@@ -1612,7 +1678,7 @@
   @media (hover: none) {
     .card:hover { transform: none; box-shadow: var(--shadow-card); border-color: var(--glass-border); }
     .rating-cell:hover { transform: none; }
-    .hero-predictor-tooltip { display: none; }
+    /* tooltips removed in new predictor design */
   }
 
   /* Landscape phones with short viewports */
@@ -1744,15 +1810,15 @@
       </div>
       <div>
         <h1>Lineup</h1>
-        <div class="subtitle">Read the lineup. Skill-aware verdict for your local breaks.</div>
+        <div class="subtitle">Read the lineup. Know when it's worth paddling out. 🤙</div>
       </div>
     </div>
     <div class="header-controls">
       <select class="level-select" id="levelSelect" aria-label="Skill level">
-        <option value="beginner">Beginner — softboard</option>
-        <option value="improver" selected>Improver — mid-length</option>
-        <option value="intermediate">Intermediate</option>
-        <option value="advanced">Advanced</option>
+        <option value="beginner">Beginner · foam board</option>
+        <option value="improver" selected>Improver · mid-length</option>
+        <option value="intermediate">Intermediate · shortboard</option>
+        <option value="advanced">Advanced · performance</option>
       </select>
     </div>
   </header>
@@ -1962,7 +2028,7 @@ function renderEmpty() {
       <div class="verdict empty">
         <div class="empty-state">
           ${ICON_COMPASS}
-          <span>Loading latest conditions...</span>
+          <span>Reading the break... 🏄</span>
         </div>
       </div>
       ${renderWebcam(spot)}
@@ -2010,7 +2076,7 @@ function setActiveSpot(spotId) {
           <div class="last-sync">not synced</div>
         </div>
         <div class="verdict empty">
-          <div class="empty-state">${ICON_COMPASS}<span>Loading latest conditions...</span></div>
+          <div class="empty-state">${ICON_COMPASS}<span>Reading the break... 🏄</span></div>
         </div>
         ${renderWebcam(spot)}
       </div>`;
@@ -2063,7 +2129,7 @@ function setLoading(spotId) {
   const card = document.getElementById('card-' + spotId);
   if (!card) return;
   const v = card.querySelector('.verdict');
-  if (v) { v.className = 'verdict empty'; v.innerHTML = '<span class="spinner"></span> fetching forecast (10–20s)...'; }
+  if (v) { v.className = 'verdict empty'; v.innerHTML = '<span class="spinner"></span> fetching the forecast...'; }
 }
 
 function renderError(spot, message) {
@@ -2366,7 +2432,7 @@ function renderDayPopover(group, spotData) {
     : null;
 
   const bestLine = bestEmpty
-    ? '<div class="rs-day-best is-empty">No standout window — flat-ish day.</div>'
+    ? '<div class="rs-day-best is-empty">Nothing stands out today.</div>'
     : `<div class="rs-day-best">⭐ Best ${future.length ? 'upcoming' : ''} hour: ${escapeHtml(cellTime24(bestCell))} · ${bestCell.rating}/10${bestRel ? ' <span class="rs-pop-when-rel ' + (bestRel.isNow ? 'is-now' : '') + '">(' + escapeHtml(bestRel.text) + ')</span>' : ''}</div>`;
 
   return `
@@ -2602,22 +2668,22 @@ function heroScoreMeaning(score) {
   let title;
   let body;
   if (value >= 7.5) {
-    title = `${value.toFixed(1)}/10 - excellent`;
-    body = 'Prioritize this. Conditions are lining up cleanly enough to feel rare.';
+    title = `${value.toFixed(1)}/10 · firing 🔥`;
+    body = "Conditions like this don't show up every week. Drop everything and go. 🤙";
   } else if (value >= 6.2) {
-    title = `${value.toFixed(1)}/10 - good`;
-    body = 'Worth planning around. Usually clean enough to be a confident go.';
+    title = `${value.toFixed(1)}/10 · solid`;
+    body = "Worth it. Paddle out — you won't regret it. 🤙";
   } else if (value >= 5) {
-    title = `${value.toFixed(1)}/10 - decent`;
-    body = 'Surfable, but with compromises. Fun if you are nearby; wait if you can be picky.';
+    title = `${value.toFixed(1)}/10 · rideable`;
+    body = "Not firing, but fun if you're close by. Skip it if you've got options.";
   } else {
-    title = `${value.toFixed(1)}/10 - poor`;
-    body = 'Usually too weak, messy, or short-lived to plan around.';
+    title = `${value.toFixed(1)}/10 · weak`;
+    body = "Probably not worth the drive. Messy, weak, or both.";
   }
 
   return {
     title,
-    body: `${body} Scale: 7.5+ excellent, 6.2+ good, 5+ surfable, below 5 poor.`
+    body: `${body} Scale: 7.5+ firing, 6.2+ solid, 5+ rideable, below 5 weak.`
   };
 }
 
@@ -2635,8 +2701,8 @@ function heroWindowParts(win) {
     scoreValue: Number.isFinite(scoreValue) ? scoreValue : null,
     reason: win.reason || '',
     tier,
-    icon: tier === 'gold' ? '🌟' : '🌤',
-    title: tier === 'gold' ? 'Gold window' : 'Best window'
+    icon: tier === 'gold' ? '🔥' : '🌊',
+    title: tier === 'gold' ? 'Firing window' : 'Best window'
   };
 }
 
@@ -2644,7 +2710,7 @@ function renderHeroWindow(win, emptyText, currentWindowText = '') {
   if (currentWindowText) {
     return `<div class="hero-window window-current">
       <div>
-        <div class="hero-window-label"><span class="hero-window-label-icon" aria-hidden="true">🌊</span>Current window</div>
+        <div class="hero-window-label"><span class="hero-window-label-icon" aria-hidden="true">🌊</span>Going now</div>
         <div class="hero-window-time">${escapeHtml(currentWindowText)}</div>
       </div>
     </div>`;
@@ -2702,21 +2768,11 @@ function predictorTier(score) {
 
 function predictorTierLabel(tier) {
   return {
-    gold: 'excellent',
-    green: 'good',
-    surfable: 'surfable',
-    low: 'low'
-  }[tier] || 'low';
-}
-
-function predictorDisplayParts(win) {
-  const label = String((win && win.label) || '');
-  const firstSpace = label.indexOf(' ');
-  if (firstSpace === -1) return { day: label || 'Window', time: '' };
-  const day = label.slice(0, firstSpace);
-  const range = label.slice(firstSpace + 1);
-  const compactRange = range.replace(/:00/g, '');
-  return { day, time: compactRange };
+    gold: 'firing 🔥',
+    green: 'solid 🤙',
+    surfable: 'rideable',
+    low: 'weak'
+  }[tier] || 'weak';
 }
 
 function predictorScoreText(score) {
@@ -2730,36 +2786,110 @@ function predictorScorePct(score) {
   return Math.max(6, Math.min(100, value * 10));
 }
 
-function predictorAriaLabel(win) {
-  const tier = predictorTier(win && win.score);
-  const value = Number(win && win.score);
-  const score = Number.isFinite(value) ? value.toFixed(1) : 'unknown';
-  const blocked = Array.isArray(win && win.blocked_by) && win.blocked_by.length
-    ? `, blocked by ${win.blocked_by.join(', ')}`
-    : '';
-  return `${(win && win.label) || 'Surf window'}, score ${score} out of 10, ${predictorTierLabel(tier)} rating${blocked}`;
+// Group predictor windows by calendar date, filtering out fully-past blocks.
+function groupPredictorByDay(windows) {
+  if (!Array.isArray(windows) || !windows.length) return [];
+  const now = Date.now();
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const groups = new Map();
+  for (const win of windows) {
+    if (!win || !win.starts_at) continue;
+    const startMs = new Date(win.starts_at).getTime();
+    const endMs = startMs + 3 * 60 * 60 * 1000;
+    if (endMs <= now) continue;
+    const dateKey = win.starts_at.slice(0, 10);
+    if (!groups.has(dateKey)) groups.set(dateKey, []);
+    groups.get(dateKey).push(win);
+  }
+  const sorted = Array.from(groups.entries()).sort(([a], [b]) => a < b ? -1 : 1);
+  return sorted.map(([dateKey, blocks]) => {
+    const dt = new Date(blocks[0].starts_at);
+    const weekday = dateKey === todayKey
+      ? 'Today'
+      : dt.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
+    const day = String(dt.getUTCDate());
+    const month = dt.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+    const bestBlock = blocks.reduce((best, w) => (Number(w.score) > Number(best.score) ? w : best), blocks[0]);
+    const bestScore = Number(bestBlock.score);
+    const bestTier = predictorTier(bestScore);
+    const hasGold = blocks.some(w => predictorTier(w.score) === 'gold');
+    return { dateKey, weekday, day, month, isToday: dateKey === todayKey, blocks, bestBlock, bestScore, bestTier, hasGold };
+  });
 }
 
-function renderPredictorBar(win, idx, selected) {
-  const tier = predictorTier(win && win.score);
-  const parts = predictorDisplayParts(win);
-  const scoreText = predictorScoreText(win && win.score);
-  const scorePct = predictorScorePct(win && win.score);
-  const reason = (win && win.reason) || '';
-  const tooltip = `<span class="hero-predictor-tooltip" role="tooltip">
-    <strong>${escapeHtml((win && win.label) || 'Surf window')} - ${escapeHtml(scoreText)}</strong>
-    ${escapeHtml(reason || predictorTierLabel(tier))}
-  </span>`;
+// Convert a window's starts_at hour to a readable 12-hour time range label.
+// Extract hour from label string ("Thu 05:00" → 5) to avoid UTC vs local timezone mismatch.
+function blockTimeLabel12h(win) {
+  if (!win) return '';
+  const label = String(win.label || '');
+  const m = label.match(/(\d+):(\d+)/);
+  if (m) {
+    const hour = parseInt(m[1], 10);
+    const map = { 5: '5–8 AM', 8: '8–11 AM', 11: '11 AM–2 PM', 14: '2–5 PM', 17: '5–8 PM' };
+    if (map[hour]) return map[hour];
+  }
+  // Fallback to UTC hour if label has no time
+  if (!win.starts_at) return '';
+  const hour = new Date(win.starts_at).getUTCHours();
+  const map = { 5: '5–8 AM', 8: '8–11 AM', 11: '11 AM–2 PM', 14: '2–5 PM', 17: '5–8 PM' };
+  return map[hour] || `${hour}:00`;
+}
 
-  return `<button class="hero-predictor-bar" type="button" data-index="${idx}" aria-pressed="${selected ? 'true' : 'false'}" aria-label="${escapeHtml(predictorAriaLabel(win))}">
-    <span class="hero-predictor-meter" aria-hidden="true">
-      <span class="hero-predictor-fill" data-tier="${escapeHtml(tier)}" style="--score-pct: ${scorePct.toFixed(0)}%"></span>
+// Map internal gate source codes to short human-readable labels.
+// Returns empty string for data-gap codes (not a surf condition).
+function friendlyBlockedLabel(source) {
+  if (!source) return '';
+  const s = String(source);
+  if (s.endsWith('_gap')) return '';
+  if (s.endsWith('_flat')) return 'Dead flat 💤';
+  if (s.endsWith('_power')) return 'Way overhead';
+  if (s.endsWith('_wind')) return 'Blown out 💨';
+  if (s.endsWith('_shape')) return 'Junky & choppy';
+  if (s.endsWith('_tide') || s === 'sf_tide') return "Tide's wrong";
+  if (s === 'sf_low_rating') return "Locals aren't feeling it";
+  if (s === 'sf_verdict') return "Hard pass";
+  return '';
+}
+
+function renderPredictorDayCard(dayObj, dayIdx, selected) {
+  const { weekday, day, month, bestTier, bestScore, hasGold, blocks } = dayObj;
+  const isEmpty = !blocks.length;
+  const scoreNum = Number.isFinite(bestScore) && bestScore > 0 ? bestScore.toFixed(1) : '—';
+  const scorePct = Math.max(6, Math.min(100, bestScore * 10)).toFixed(0);
+  const goldStar = hasGold ? `<span class="hpdc-gold-star" aria-hidden="true">★</span>` : '';
+  const emptyClass = isEmpty ? ' is-empty' : '';
+  return `<button class="hero-predictor-day-card${emptyClass}" type="button"
+    data-day-index="${dayIdx}"
+    aria-selected="${selected ? 'true' : 'false'}"
+    aria-label="${escapeHtml(weekday)} ${escapeHtml(month)} ${escapeHtml(day)}, best score ${escapeHtml(scoreNum)}">
+    <span class="hpdc-weekday">${escapeHtml(weekday)}</span>
+    <span class="hpdc-date">${escapeHtml(month)} ${escapeHtml(day)}</span>
+    <span class="hpdc-meter" aria-hidden="true"><span class="hpdc-fill" data-tier="${escapeHtml(bestTier)}" style="--score-pct:${scorePct}%"></span></span>
+    <span class="hpdc-score" data-tier="${escapeHtml(bestTier)}">${escapeHtml(scoreNum)}</span>
+    ${goldStar}
+  </button>`;
+}
+
+function renderPredictorHourBar(win, globalIdx, selected) {
+  const tier = predictorTier(win && win.score);
+  const timeLabel = blockTimeLabel12h(win);
+  const score = Number(win && win.score);
+  const scoreText = Number.isFinite(score) ? score.toFixed(1) : '—';
+  const scorePct = Number.isFinite(score) ? Math.max(6, Math.min(100, score * 10)).toFixed(0) : '6';
+  const blockedSources = Array.isArray(win && win.blocked_by) ? win.blocked_by : [];
+  const blockedLabel = blockedSources.map(friendlyBlockedLabel).find(l => l) || '';
+  const blockedHtml = blockedLabel ? `<span class="hphb-blocked" aria-hidden="true">${escapeHtml(blockedLabel)}</span>` : '';
+  const ariaLabel = `${timeLabel}, score ${scoreText} out of 10, ${predictorTierLabel(tier)}${blockedLabel ? ', ' + blockedLabel : ''}`;
+  return `<button class="hero-predictor-hour-bar" type="button"
+    data-index="${globalIdx}"
+    aria-pressed="${selected ? 'true' : 'false'}"
+    aria-label="${escapeHtml(ariaLabel)}">
+    <span class="hphb-time" aria-hidden="true">${escapeHtml(timeLabel)}</span>
+    <span class="hphb-meter" aria-hidden="true">
+      <span class="hphb-fill" data-tier="${escapeHtml(tier)}" style="--score-pct:${scorePct}%"></span>
     </span>
-    <span class="hero-predictor-labels" aria-hidden="true">
-      <span class="hero-predictor-day">${escapeHtml(parts.day)}</span>
-      <span class="hero-predictor-time">${escapeHtml(parts.time)}</span>
-    </span>
-    ${tooltip}
+    <span class="hphb-score" data-tier="${escapeHtml(tier)}" aria-hidden="true">${escapeHtml(scoreText)}</span>
+    ${blockedHtml}
   </button>`;
 }
 
@@ -2804,7 +2934,7 @@ function renderWindowPracticalDetail(win) {
   return `<section class="window-practical-detail" aria-live="polite">
     <div class="window-practical-top">
       <div>
-        <div class="window-practical-eyebrow">Selected window</div>
+        <div class="window-practical-eyebrow">This session</div>
         <h3>${escapeHtml(win.label || 'Surf window')}</h3>
         <p>${escapeHtml(practical.summary || '')}</p>
         ${signal}
@@ -2934,13 +3064,13 @@ function renderWindowTechnicalDetail(win, expanded = false) {
 
   if (!technical) {
     return `<section class="window-technical-detail is-unavailable"${hidden} role="status">
-      Selected-window technical data unavailable: missing_window_technical_payload.
+      No data for this session.
     </section>`;
   }
 
   if (technical.unavailable_reason) {
     return `<section class="window-technical-detail is-unavailable"${hidden} role="status">
-      Selected-window technical data unavailable: ${escapeHtml(technical.unavailable_reason)}.
+      No data for this session — ${escapeHtml(technical.unavailable_reason)}.
     </section>`;
   }
 
@@ -2949,12 +3079,12 @@ function renderWindowTechnicalDetail(win, expanded = false) {
     .map(renderTechnicalIndicator)
     .join('');
   const scoreText = predictorScoreText(aggregate.score ?? (win && win.score));
-  const confidence = aggregate.confidence ? `confidence ${aggregate.confidence}` : 'confidence missing';
+  const confidence = aggregate.confidence ? `confidence ${aggregate.confidence}` : 'confidence unknown';
 
   return `<section class="window-technical-detail"${hidden} aria-live="polite">
     <div class="window-technical-top">
       <div>
-        <div class="window-technical-eyebrow">Selected-window data</div>
+        <div class="window-technical-eyebrow">Session data</div>
         <h3 class="window-technical-title">${escapeHtml((win && win.label) || 'Surf window')}</h3>
       </div>
       <div class="window-technical-meta">${escapeHtml(scoreText)}<br>${escapeHtml(confidence)}</div>
@@ -2964,24 +3094,60 @@ function renderWindowTechnicalDetail(win, expanded = false) {
   </section>`;
 }
 
-function renderPredictorRibbon(windows, selectedIndex = 0, technicalExpanded = false) {
+function renderPredictorRibbon(windows, selectedIndex = 0, technicalExpanded = false, selectedDayIndex = -1) {
   if (!Array.isArray(windows) || !windows.length) return '';
   const safeIdx = Math.max(0, Math.min(selectedIndex, windows.length - 1));
   const expanded = technicalExpanded === true || technicalExpanded === '1';
-  return `<div class="hero-predictor" aria-label="Seven day surf score predictor">
+
+  const days = groupPredictorByDay(windows);
+  if (!days.length) return '';
+
+  // Resolve which day is selected
+  let dayIdx = Number(selectedDayIndex);
+  if (dayIdx < 0 || dayIdx >= days.length) {
+    const selWin = windows[safeIdx];
+    if (selWin && selWin.starts_at) {
+      const dk = selWin.starts_at.slice(0, 10);
+      dayIdx = days.findIndex(d => d.dateKey === dk);
+      if (dayIdx < 0) dayIdx = 0;
+    } else {
+      dayIdx = 0;
+    }
+  }
+  dayIdx = Math.max(0, Math.min(dayIdx, days.length - 1));
+
+  const dayCards = days.map((d, i) => renderPredictorDayCard(d, i, i === dayIdx)).join('');
+  const currentDayObj = days[dayIdx];
+  const dayBlocks = currentDayObj ? currentDayObj.blocks : [];
+  const hourBars = dayBlocks.map(win => {
+    const globalIdx = windows.indexOf(win);
+    return renderPredictorHourBar(win, globalIdx, globalIdx === safeIdx);
+  }).join('');
+
+  const selectedWin = windows[safeIdx];
+
+  return `<div class="hero-predictor" aria-label="Next 7 days surf predictor">
     <div class="hero-predictor-head">
-      <div class="hero-predictor-title">7-day predictor</div>
-      <div class="hero-predictor-count">${windows.length} windows</div>
+      <div class="hero-predictor-title">Next 7 days</div>
+      <div class="hero-predictor-legend" aria-hidden="true">
+        <span class="hero-predictor-legend-dot" data-tier="gold">●</span>&thinsp;7.5+
+        <span class="hero-predictor-legend-dot" data-tier="green">●</span>&thinsp;6.2+
+        <span class="hero-predictor-legend-dot" data-tier="surfable">●</span>&thinsp;5+
+        <span class="hero-predictor-legend-dot" data-tier="low">●</span>&thinsp;Low
+      </div>
     </div>
-    <div class="hero-predictor-track">
-      ${windows.map((win, idx) => renderPredictorBar(win, idx, idx === safeIdx)).join('')}
+    <div class="hero-predictor-days" role="tablist" aria-label="Select day">
+      ${dayCards}
     </div>
-    ${renderWindowPracticalDetail(windows[safeIdx])}
+    <div class="hero-predictor-hours" role="tablist" aria-label="Select session">
+      ${hourBars || '<span style="font-size:0.7rem;color:var(--text-faint);padding:0.5rem">No sessions</span>'}
+    </div>
+    ${renderWindowPracticalDetail(selectedWin)}
   </div>
   <button class="hero-toggle-details" type="button" aria-expanded="${expanded ? 'true' : 'false'}">
-    ${expanded ? 'Hide technical details' : 'Show technical details'}
+    ${expanded ? 'Hide the numbers' : 'Show the numbers'}
   </button>
-  <div class="hero-technical-slot">${renderWindowTechnicalDetail(windows[safeIdx], technicalExpanded)}</div>`;
+  <div class="hero-technical-slot">${renderWindowTechnicalDetail(selectedWin, technicalExpanded)}</div>`;
 }
 
 function renderUnifiedHero(data) {
@@ -3005,26 +3171,46 @@ function renderUnifiedHero(data) {
   let currentWindowText = '';
   if (u.current_window_ends && u.decision === 'go') {
     const end = hhmmFromIso(u.current_window_ends);
-    currentWindowText = end ? `Open until ${end}` : 'Open now';
+    currentWindowText = end ? `Going until ${end}` : 'Going now 🌊';
   }
 
   const heroIndex = 0;
   const windowHtml = topWindows.length
     ? renderHeroWindowCarousel(topWindows, heroIndex, currentWindowText)
-    : renderHeroWindow(null, 'No clean window found in the next 7 days.', currentWindowText);
+    : renderHeroWindow(null, 'Nothing worth it in the next 7 days.', currentWindowText);
   const predictorWindows = Array.isArray(u.predictor_windows) ? u.predictor_windows : [];
   const selectedStart = topWindows.length ? windowStartKey(topWindows[0]) : '';
-  const initialPredictorIndex = Math.max(0, findWindowIndexByStart(predictorWindows, selectedStart));
-  const predictorHtml = renderPredictorRibbon(predictorWindows, initialPredictorIndex, false);
+  let initialPredictorIndex = findWindowIndexByStart(predictorWindows, selectedStart);
+  const predictorDays = groupPredictorByDay(predictorWindows);
+  let initialDayIndex = 0;
+  // Derive day and best-block from selectedStart's date when there's no exact starts_at match.
+  if (initialPredictorIndex === -1 && selectedStart && predictorDays.length) {
+    const dk = selectedStart.slice(0, 10);
+    const dIdx = predictorDays.findIndex(d => d.dateKey === dk);
+    if (dIdx !== -1) {
+      initialDayIndex = dIdx;
+      const best = predictorDays[dIdx].bestBlock;
+      if (best) initialPredictorIndex = predictorWindows.indexOf(best);
+    }
+  } else if (initialPredictorIndex !== -1) {
+    const initWin = predictorWindows[initialPredictorIndex];
+    if (initWin && initWin.starts_at) {
+      const dk = initWin.starts_at.slice(0, 10);
+      const dIdx = predictorDays.findIndex(d => d.dateKey === dk);
+      if (dIdx !== -1) initialDayIndex = dIdx;
+    }
+  }
+  if (initialPredictorIndex < 0) initialPredictorIndex = 0;
+  const predictorHtml = renderPredictorRibbon(predictorWindows, initialPredictorIndex, false, initialDayIndex);
   const reason = u.decision_reason || u.agreement_note || '';
   const reasonHtml = reason
     ? `<div class="hero-reason">${escapeHtml(reason)}</div>`
     : '';
 
   const heroState = JSON.stringify({ windows: topWindows, predictorWindows, currentWindowText });
-  return `<div class="hero-card tier-${escapeHtml(tier)}" data-hero-state="${escapeHtml(heroState)}" data-hero-index="0" data-predictor-index="${escapeHtml(String(initialPredictorIndex))}" data-selected-window-start="${escapeHtml(selectedStart)}" data-technical-expanded="0">
+  return `<div class="hero-card tier-${escapeHtml(tier)}" data-hero-state="${escapeHtml(heroState)}" data-hero-index="0" data-predictor-index="${escapeHtml(String(initialPredictorIndex))}" data-predictor-day-index="${escapeHtml(String(initialDayIndex))}" data-selected-window-start="${escapeHtml(selectedStart)}" data-technical-expanded="0">
     <div class="hero-tier-badge">${escapeHtml(badge)}</div>
-    <div class="hero-headline">${escapeHtml(u.decision_headline || 'WAIT FOR A BETTER WINDOW')}</div>
+    <div class="hero-headline">${escapeHtml(u.decision_headline || 'HOLD OFF FOR NOW')}</div>
     <div class="hero-summary">${escapeHtml(u.plain_summary || '')}</div>
     ${reasonHtml}
     <div class="hero-window-slot">${windowHtml}</div>
@@ -3068,20 +3254,16 @@ function _heroState(card) {
 }
 
 function scrollPredictorBarIntoTrack(bar) {
-  const track = bar && bar.closest('.hero-predictor-track');
-  if (!track) return false;
-
+  // Hour bars fill a fixed 5-column grid and don't need scrolling.
+  // Day cards fill a 7-column grid; on very narrow viewports they may need scroll.
+  const track = bar && bar.closest('.hero-predictor-days');
+  if (!track) return true;
   const barLeft = bar.offsetLeft;
   const barRight = barLeft + bar.offsetWidth;
   const visibleLeft = track.scrollLeft;
   const visibleRight = visibleLeft + track.clientWidth;
-
-  if (barLeft < visibleLeft) {
-    track.scrollLeft = barLeft;
-  } else if (barRight > visibleRight) {
-    track.scrollLeft = barRight - track.clientWidth;
-  }
-
+  if (barLeft < visibleLeft) track.scrollLeft = barLeft;
+  else if (barRight > visibleRight) track.scrollLeft = barRight - track.clientWidth;
   return true;
 }
 
@@ -3101,15 +3283,34 @@ function _renderHeroSlot(card) {
     if (windows.length) {
       slot.innerHTML = renderHeroWindowCarousel(windows, idx, state.currentWindowText || '');
     } else {
-      slot.innerHTML = renderHeroWindow(null, 'No clean window found in the next 7 days.', state.currentWindowText || '');
+      slot.innerHTML = renderHeroWindow(null, 'Nothing worth it in the next 7 days.', state.currentWindowText || '');
     }
   }
 
   if (predictorSlot) {
     let predictorIdx = findWindowIndexByStart(predictorWindows, selectedStart);
+    const days = groupPredictorByDay(predictorWindows);
+
+    // Sync the day strip to whichever day selectedStart falls on.
+    // Top-window starts_at and predictor starts_at rarely match exactly,
+    // so we derive the day from the date portion of the ISO string.
+    if (selectedStart && days.length) {
+      const syncDateKey = selectedStart.slice(0, 10);
+      const dIdx = days.findIndex(d => d.dateKey === syncDateKey);
+      if (dIdx !== -1) {
+        card.setAttribute('data-predictor-day-index', String(dIdx));
+        // If no exact predictor match, default to that day's best block
+        if (predictorIdx === -1) {
+          const bestBlock = days[dIdx].bestBlock;
+          if (bestBlock) predictorIdx = predictorWindows.indexOf(bestBlock);
+        }
+      }
+    }
+
     if (predictorIdx === -1) predictorIdx = clampIndex(card.getAttribute('data-predictor-index'), predictorWindows.length);
     card.setAttribute('data-predictor-index', String(predictorIdx));
-    predictorSlot.innerHTML = renderPredictorRibbon(predictorWindows, predictorIdx, technicalExpanded);
+    const dayIdx = parseInt(card.getAttribute('data-predictor-day-index') || '-1', 10);
+    predictorSlot.innerHTML = renderPredictorRibbon(predictorWindows, predictorIdx, technicalExpanded, dayIdx);
   }
 
   // Move keyboard focus back onto the carousel container so screen readers
@@ -3120,12 +3321,10 @@ function _renderHeroSlot(card) {
     card.dataset.heroFocusPending = '0';
   }
 
-  const predictor = predictorSlot && predictorSlot.querySelector('.hero-predictor-bar[aria-pressed="true"]');
+  const predictor = predictorSlot && predictorSlot.querySelector('.hero-predictor-hour-bar[aria-pressed="true"]');
   if (predictor && card.dataset.predictorFocusPending === '1') {
     predictor.focus({ preventScroll: true });
-    if (!scrollPredictorBarIntoTrack(predictor)) {
-      throw new Error('predictor_track_missing');
-    }
+    scrollPredictorBarIntoTrack(predictor);
     card.dataset.predictorFocusPending = '0';
   }
 }
@@ -3151,10 +3350,17 @@ function _predictorStep(card, delta) {
   const cur = clampIndex(card.getAttribute('data-predictor-index'), windows.length);
   const next = clampIndex(cur + delta, windows.length);
   if (next === cur) return;
+  const nextWin = windows[next];
   card.setAttribute('data-predictor-index', String(next));
-  card.setAttribute('data-selected-window-start', windowStartKey(windows[next]));
-  const heroIdx = findWindowIndexByStart(state.windows || [], windowStartKey(windows[next]));
+  card.setAttribute('data-selected-window-start', windowStartKey(nextWin));
+  const heroIdx = findWindowIndexByStart(state.windows || [], windowStartKey(nextWin));
   if (heroIdx !== -1) card.setAttribute('data-hero-index', String(heroIdx));
+  if (nextWin && nextWin.starts_at) {
+    const days = groupPredictorByDay(windows);
+    const dk = nextWin.starts_at.slice(0, 10);
+    const dIdx = days.findIndex(d => d.dateKey === dk);
+    if (dIdx !== -1) card.setAttribute('data-predictor-day-index', String(dIdx));
+  }
   card.dataset.predictorFocusPending = '1';
   _renderHeroSlot(card);
 }
@@ -3191,10 +3397,32 @@ function bindUnifiedHero(card) {
   const predictorSlot = card.querySelector('.hero-predictor-slot');
   if (predictorSlot) {
     predictorSlot.addEventListener('click', (e) => {
-      const bar = e.target.closest('.hero-predictor-bar');
-      if (!bar) return;
       const state = _heroState(heroCard);
       const predictorWindows = Array.isArray(state.predictorWindows) ? state.predictorWindows : [];
+
+      // Day card click — switch day and auto-select best block
+      const dayCard = e.target.closest('.hero-predictor-day-card');
+      if (dayCard && !dayCard.classList.contains('is-empty')) {
+        const dayIdx = parseInt(dayCard.dataset.dayIndex, 10);
+        heroCard.setAttribute('data-predictor-day-index', String(dayIdx));
+        const days = groupPredictorByDay(predictorWindows);
+        const dayObj = days[dayIdx];
+        if (dayObj && dayObj.bestBlock) {
+          const globalIdx = predictorWindows.indexOf(dayObj.bestBlock);
+          if (globalIdx !== -1) {
+            heroCard.setAttribute('data-predictor-index', String(globalIdx));
+            heroCard.setAttribute('data-selected-window-start', windowStartKey(dayObj.bestBlock));
+            const heroIdx = findWindowIndexByStart(state.windows || [], windowStartKey(dayObj.bestBlock));
+            if (heroIdx !== -1) heroCard.setAttribute('data-hero-index', String(heroIdx));
+          }
+        }
+        _renderHeroSlot(heroCard);
+        return;
+      }
+
+      // Hour bar click — select session and sync top carousel
+      const bar = e.target.closest('.hero-predictor-hour-bar');
+      if (!bar) return;
       const idx = clampIndex(bar.dataset.index, predictorWindows.length);
       const selected = predictorWindows[idx];
       heroCard.setAttribute('data-predictor-index', String(idx));
@@ -3205,15 +3433,10 @@ function bindUnifiedHero(card) {
       _renderHeroSlot(heroCard);
     });
     predictorSlot.addEventListener('keydown', (e) => {
-      const bar = e.target.closest('.hero-predictor-bar');
+      const bar = e.target.closest('.hero-predictor-hour-bar');
       if (!bar) return;
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        _predictorStep(heroCard, -1);
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        _predictorStep(heroCard, 1);
-      }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); _predictorStep(heroCard, -1); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); _predictorStep(heroCard, 1); }
     });
   }
 }

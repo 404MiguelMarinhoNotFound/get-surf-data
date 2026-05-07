@@ -94,6 +94,19 @@ class MobileHTMLTest(unittest.TestCase):
             "Hero must still render the primary best-window slot",
         )
 
+    def test_forecast_cards_show_data_status(self):
+        for required in (
+            "function renderDataStatus",
+            "class=\"card-meta\"",
+            "class=\"data-status ${data.cache_stale ? 'is-stale' : 'is-found'}\"",
+            "data found - ${topCount} top - ${predictorCount} predictor",
+            "cache_status",
+            "cache_stale",
+            "live source",
+            "${renderDataStatus(data)}",
+        ):
+            self.assertIn(required, self.html)
+
     def test_predictor_ribbon_markup_and_handlers(self):
         for required in (
             "function renderPredictorRibbon",

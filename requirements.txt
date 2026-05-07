@@ -1,1 +1,1 @@
-# stdlib only — no pip dependencies
+psycopg[binary]>=3.2,<4

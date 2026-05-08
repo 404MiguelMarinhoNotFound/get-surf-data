@@ -22,7 +22,7 @@ try:
 except ZoneInfoNotFoundError:
     LISBON_TZ = None
 CACHE_KEY = "global"
-PAYLOAD_VERSION = 1
+PAYLOAD_VERSION = 2
 ADVISORY_LOCK_ID = 2026050701
 
 
@@ -260,7 +260,7 @@ def _json_error(exc):
 
 def _source_hourly_rows(spot_id, run_id, sources, payload):
     rows = []
-    for source_name in ("om", "gfs", "ibi", "surfline", "windguru"):
+    for source_name in ("om", "gfs", "ibi", "surfline", "windguru", "windguru_ecmwf"):
         data = (sources.get(source_name) or {}).get("data") or {}
         for item in data.get("hourly", []) or []:
             if item.get("timestamp_utc"):
@@ -280,6 +280,7 @@ def _source_snapshot_rows(spot_id, run_id, sources, payload):
         "ibi": "ibi_analysis",
         "surfline": "surfline_analysis",
         "windguru": "windguru_analysis",
+        "windguru_ecmwf": "windguru_ecmwf_analysis",
     }
     error_keys = {
         "sf": None,
@@ -288,8 +289,9 @@ def _source_snapshot_rows(spot_id, run_id, sources, payload):
         "ibi": "ibi_error",
         "surfline": "surfline_error",
         "windguru": "windguru_error",
+        "windguru_ecmwf": "windguru_ecmwf_error",
     }
-    for source_name in ("sf", "om", "gfs", "ibi", "surfline", "windguru"):
+    for source_name in ("sf", "om", "gfs", "ibi", "surfline", "windguru", "windguru_ecmwf"):
         source = sources.get(source_name) or {}
         data = source.get("data") or {}
         current = data.get("current") if isinstance(data, dict) else None

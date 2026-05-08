@@ -38,10 +38,13 @@ class WeightedGeometricTests(unittest.TestCase):
     def test_base_weights_sum_to_one(self):
         self.assertAlmostEqual(sum(ue.BASE_WEIGHTS.values()), 1.0, places=6)
 
-    def test_om_is_highest_weight_and_windguru_is_lowest(self):
-        self.assertGreater(ue.BASE_WEIGHTS["om"], ue.BASE_WEIGHTS["sf"])
-        self.assertGreater(ue.BASE_WEIGHTS["sf"], ue.BASE_WEIGHTS["surfline"])
-        self.assertGreater(ue.BASE_WEIGHTS["surfline"], ue.BASE_WEIGHTS["windguru"])
+    def test_active_ecmwf_weight_targets(self):
+        self.assertEqual(ue.BASE_WEIGHTS["om"], 0.32)
+        self.assertEqual(ue.BASE_WEIGHTS["sf"], 0.23)
+        self.assertEqual(ue.BASE_WEIGHTS["gfs"], 0.17)
+        self.assertEqual(ue.BASE_WEIGHTS["windguru_ecmwf"], 0.10)
+        self.assertEqual(ue.BASE_WEIGHTS["windguru"], 0.03)
+        self.assertGreater(ue.BASE_WEIGHTS["windguru_ecmwf"], ue.BASE_WEIGHTS["windguru"])
 
     def test_all_none_returns_none(self):
         self.assertIsNone(ue._weighted_geometric(None, None, None))
@@ -68,6 +71,25 @@ class WeightedGeometricTests(unittest.TestCase):
         ibi_w = ue.IBI_WEIGHT / total
         expected = 10.0 * ((8.0 / 10.0) ** sf_w) * ((6.0 / 10.0) ** ibi_w)
         self.assertAlmostEqual(result, expected, places=4)
+
+    def test_windguru_ecmwf_participates_in_geometric_blend(self):
+        result = ue._weighted_geometric(
+            6.0,
+            6.0,
+            None,
+            gfs_score=6.0,
+            windguru_score=6.0,
+            windguru_ecmwf_score=8.0,
+        )
+        without_ecmwf = ue._weighted_geometric(
+            6.0,
+            6.0,
+            None,
+            gfs_score=6.0,
+            windguru_score=6.0,
+        )
+
+        self.assertGreater(result, without_ecmwf)
 
 
 class ConsensusScoreTests(unittest.TestCase):
@@ -103,6 +125,18 @@ class ConfidenceTests(unittest.TestCase):
 
 
 class AdaptiveBlendIntegrationTests(unittest.TestCase):
+    def _model_row(self, *, height=1.1, period=11, direction=260, wind=8, wind_direction=10):
+        return {
+            "wave_height": height,
+            "wave_period": period,
+            "swell_height": height,
+            "swell_period": period,
+            "swell_direction": direction,
+            "wind_wave_height": 0.1,
+            "wind_speed_kmh": wind,
+            "wind_direction_deg": wind_direction,
+        }
+
     def test_unify_om_gfs_ibi_surfline_windguru_sources_and_weights(self):
         sf_data = {
             "rating": 6,
@@ -166,6 +200,16 @@ class AdaptiveBlendIntegrationTests(unittest.TestCase):
             "wind_speed_kmh": 8,
             "wind_direction_deg": 10,
         }
+        windguru_ecmwf = {
+            "wave_height": 1.2,
+            "wave_period": 12,
+            "swell_height": 1.1,
+            "swell_period": 12,
+            "swell_direction": 260,
+            "wind_wave_height": 0.1,
+            "wind_speed_kmh": 7,
+            "wind_direction_deg": 15,
+        }
 
         result = ue.unify(
             sf_data=sf_data,
@@ -177,14 +221,73 @@ class AdaptiveBlendIntegrationTests(unittest.TestCase):
             gfs_analysis=gfs,
             surfline_analysis=surfline,
             windguru_analysis=windguru,
+            windguru_ecmwf_analysis=windguru_ecmwf,
         )
 
-        self.assertEqual(result["sources_used"], ["gfs", "ibi", "om", "sf", "surfline", "windguru"])
-        self.assertEqual(set(result["source_scores"]), {"sf", "surfline", "windguru", "om", "gfs", "ibi"})
+        self.assertEqual(result["sources_used"], ["gfs", "ibi", "om", "sf", "surfline", "windguru", "windguru_ecmwf"])
+        self.assertEqual(set(result["source_scores"]), {"sf", "surfline", "windguru", "windguru_ecmwf", "om", "gfs", "ibi"})
         self.assertGreater(result["weights"]["om"], result["weights"]["sf"])
-        self.assertGreater(result["weights"]["sf"], result["weights"]["surfline"])
-        self.assertGreater(result["weights"]["surfline"], result["weights"]["windguru"])
+        self.assertGreater(result["weights"]["gfs"], result["weights"]["windguru_ecmwf"])
+        self.assertGreater(result["weights"]["windguru_ecmwf"], result["weights"]["windguru"])
         self.assertAlmostEqual(sum(result["weights"].values()), 1.0, places=4)
+        self.assertIsNotNone(result["factor_scores"]["windguru_ecmwf"])
+
+    def test_windguru_ecmwf_failure_excludes_only_that_source(self):
+        sf_data = {
+            "rating": 6,
+            "verdict": "go",
+            "details": [],
+            "rating_timeline": [],
+            "now_utc": "2026-04-29T10:00:00+00:00",
+            "tide": None,
+        }
+        spot = {"optimal_swell_bearing": 260, "offshore_bearing": 10}
+
+        with_ecmwf = ue.unify(
+            sf_data=sf_data,
+            om_analysis=self._model_row(height=1.0, period=10),
+            om_hourly=[],
+            spot=spot,
+            level="improver",
+            gfs_analysis=self._model_row(height=1.0, period=10, wind=9),
+            windguru_analysis=self._model_row(height=1.0, period=10, wind=8),
+            windguru_ecmwf_analysis=self._model_row(height=1.5, period=13, wind=6),
+        )
+        without_ecmwf = ue.unify(
+            sf_data=sf_data,
+            om_analysis=self._model_row(height=1.0, period=10),
+            om_hourly=[],
+            spot=spot,
+            level="improver",
+            gfs_analysis=self._model_row(height=1.0, period=10, wind=9),
+            windguru_analysis=self._model_row(height=1.0, period=10, wind=8),
+            windguru_ecmwf_analysis=None,
+        )
+
+        self.assertIn("windguru_ecmwf", with_ecmwf["sources_used"])
+        self.assertNotIn("windguru_ecmwf", without_ecmwf["sources_used"])
+        self.assertEqual(set(without_ecmwf["sources_used"]), {"gfs", "om", "sf", "windguru"})
+        self.assertIsNone(without_ecmwf["source_scores"]["windguru_ecmwf"])
+        self.assertEqual(without_ecmwf["weights"]["windguru_ecmwf"], 0.0)
+        self.assertAlmostEqual(sum(without_ecmwf["weights"].values()), 1.0, places=4)
+
+    def test_windguru_ecmwf_factor_scores_are_physical_model_factors(self):
+        result = ue.unify(
+            sf_data={"rating": None, "details": [], "rating_timeline": [], "tide": None},
+            om_analysis=None,
+            om_hourly=[],
+            spot={"optimal_swell_bearing": 260, "offshore_bearing": 10},
+            level="improver",
+            windguru_ecmwf_analysis=self._model_row(height=1.3, period=12, direction=260, wind=7),
+        )
+
+        factors = result["factor_scores"]["windguru_ecmwf"]
+        self.assertEqual(
+            set(factors),
+            {"height", "power", "period", "wind", "chop", "direction", "secondary"},
+        )
+        self.assertNotIn("tide", factors)
+        self.assertIn("tide", result["factor_scores"])
 
     def test_ibi_uses_om_wind_for_onshore_penalty(self):
         spot = {"optimal_swell_bearing": 260, "offshore_bearing": 10}

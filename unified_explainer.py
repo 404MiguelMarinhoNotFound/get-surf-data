@@ -30,16 +30,18 @@ DECISION_SKIP = "skip"
 _KNOWN_VERDICTS = {DECISION_GO, DECISION_MAYBE, DECISION_SKIP}
 _MISSING_VERDICTS = {None, "", "empty", "unknown"}
 
-SF_WEIGHT = 0.25
+SF_WEIGHT = 0.23
 SURFLINE_WEIGHT = 0.10
-WINDGURU_WEIGHT = 0.05
-OM_WEIGHT = 0.35
-GFS_WEIGHT = 0.20
+WINDGURU_WEIGHT = 0.03
+WINDGURU_ECMWF_WEIGHT = 0.10
+OM_WEIGHT = 0.32
+GFS_WEIGHT = 0.17
 IBI_WEIGHT = 0.05
 BASE_WEIGHTS = {
     "sf": SF_WEIGHT,
     "surfline": SURFLINE_WEIGHT,
     "windguru": WINDGURU_WEIGHT,
+    "windguru_ecmwf": WINDGURU_ECMWF_WEIGHT,
     "om": OM_WEIGHT,
     "gfs": GFS_WEIGHT,
     "ibi": IBI_WEIGHT,
@@ -290,12 +292,13 @@ def _normalize_model_row(row):
 
 
 def _available_sources(sf_score=None, om_score=None, gfs_score=None, ibi_score=None,
-                       surfline_score=None, windguru_score=None):
+                       surfline_score=None, windguru_score=None, windguru_ecmwf_score=None):
     return {
         key for key, score in {
             "sf": sf_score,
             "surfline": surfline_score,
             "windguru": windguru_score,
+            "windguru_ecmwf": windguru_ecmwf_score,
             "om": om_score,
             "gfs": gfs_score,
             "ibi": ibi_score,
@@ -305,11 +308,11 @@ def _available_sources(sf_score=None, om_score=None, gfs_score=None, ibi_score=N
 
 
 def _adaptive_weights(sf=None, om=None, gfs=None, ibi=None, available=None, tide_known=True,
-                      surfline=None, windguru=None):
+                      surfline=None, windguru=None, windguru_ecmwf=None):
     """Return normalized per-hour weights after completeness nudges.
 
-    Base shape stays conservative: SF 40%, OM 30%, and the independent model
-    bucket split between GFS 20% and regional IBI 10%.
+    Base shape stays conservative: OM and SF lead; GFS, Surfline, Windguru ECMWF,
+    IBI, and Windguru GFS provide independent or UX-consistency checks.
     """
     available = set(available or [])
     weights = {key: (BASE_WEIGHTS[key] if key in available else 0.0) for key in BASE_WEIGHTS}
@@ -326,6 +329,12 @@ def _adaptive_weights(sf=None, om=None, gfs=None, ibi=None, available=None, tide
             weights["windguru"] = max(0.0, weights["windguru"] - 0.10)
         elif not _has_wind_fields(windguru):
             weights["windguru"] = max(0.0, weights["windguru"] - 0.05)
+
+    if "windguru_ecmwf" in available:
+        if not _has_wave_fields(windguru_ecmwf):
+            weights["windguru_ecmwf"] = max(0.0, weights["windguru_ecmwf"] - 0.10)
+        elif not _has_wind_fields(windguru_ecmwf):
+            weights["windguru_ecmwf"] = max(0.0, weights["windguru_ecmwf"] - 0.05)
 
     if "om" in available:
         if _has_value(om, "wind_gusts", "wind_gusts_kmh"):
@@ -392,13 +401,17 @@ def _sf_quality_score(rating, is_gold_star=False, surfline_tier=None, surfline_s
 
 
 def _blend_inputs(sf_score, om_score, ibi_score=None, gfs_score=None, weights=None,
-                  surfline_score=None, windguru_score=None):
+                  surfline_score=None, windguru_score=None, windguru_ecmwf_score=None):
     """Build a {key: (score, weight)} dict, dropping None scores."""
     weights = weights or BASE_WEIGHTS
     raw = {
         "sf":  (_clamp_score(sf_score),  weights.get("sf", SF_WEIGHT)),
         "surfline": (_clamp_score(surfline_score), weights.get("surfline", SURFLINE_WEIGHT)),
         "windguru": (_clamp_score(windguru_score), weights.get("windguru", WINDGURU_WEIGHT)),
+        "windguru_ecmwf": (
+            _clamp_score(windguru_ecmwf_score),
+            weights.get("windguru_ecmwf", WINDGURU_ECMWF_WEIGHT),
+        ),
         "om":  (_clamp_score(om_score),  weights.get("om", OM_WEIGHT)),
         "gfs": (_clamp_score(gfs_score), weights.get("gfs", GFS_WEIGHT)),
         "ibi": (_clamp_score(ibi_score), weights.get("ibi", IBI_WEIGHT)),
@@ -410,13 +423,15 @@ def _weighted_harmonic(sf_score, om_score, ibi_score=None,
                        sf_weight=SF_WEIGHT, om_weight=OM_WEIGHT, ibi_weight=IBI_WEIGHT,
                        gfs_score=None, gfs_weight=GFS_WEIGHT,
                        surfline_score=None, surfline_weight=SURFLINE_WEIGHT,
-                       windguru_score=None, windguru_weight=WINDGURU_WEIGHT):
+                       windguru_score=None, windguru_weight=WINDGURU_WEIGHT,
+                       windguru_ecmwf_score=None, windguru_ecmwf_weight=WINDGURU_ECMWF_WEIGHT):
     """Weighted harmonic mean across available sources with pro-rata renormalization
     when a source is missing."""
     raw = {
         "sf":  (_clamp_score(sf_score),  sf_weight),
         "surfline": (_clamp_score(surfline_score), surfline_weight),
         "windguru": (_clamp_score(windguru_score), windguru_weight),
+        "windguru_ecmwf": (_clamp_score(windguru_ecmwf_score), windguru_ecmwf_weight),
         "om":  (_clamp_score(om_score),  om_weight),
         "gfs": (_clamp_score(gfs_score), gfs_weight),
         "ibi": (_clamp_score(ibi_score), ibi_weight),
@@ -437,6 +452,8 @@ def _weighted_geometric(sf_score, om_score, ibi_score=None,
                         gfs_score=None, gfs_weight=GFS_WEIGHT,
                         surfline_score=None, surfline_weight=SURFLINE_WEIGHT,
                         windguru_score=None, windguru_weight=WINDGURU_WEIGHT,
+                        windguru_ecmwf_score=None,
+                        windguru_ecmwf_weight=WINDGURU_ECMWF_WEIGHT,
                         epsilon=0.05):
     """Weighted geometric mean across available 0-10 source scores.
 
@@ -448,6 +465,7 @@ def _weighted_geometric(sf_score, om_score, ibi_score=None,
         "sf":  (_clamp_score(sf_score),  sf_weight),
         "surfline": (_clamp_score(surfline_score), surfline_weight),
         "windguru": (_clamp_score(windguru_score), windguru_weight),
+        "windguru_ecmwf": (_clamp_score(windguru_ecmwf_score), windguru_ecmwf_weight),
         "om":  (_clamp_score(om_score),  om_weight),
         "gfs": (_clamp_score(gfs_score), gfs_weight),
         "ibi": (_clamp_score(ibi_score), ibi_weight),
@@ -492,11 +510,12 @@ def _raw_variable_spread(rows):
 
 
 def _confidence_detail(sf_score, om_score, ibi_score=None, gfs_score=None, weights=None, rows=None,
-                       surfline_score=None, windguru_score=None):
+                       surfline_score=None, windguru_score=None, windguru_ecmwf_score=None):
     inputs = _blend_inputs(
         sf_score, om_score, ibi_score, gfs_score, weights,
         surfline_score=surfline_score,
         windguru_score=windguru_score,
+        windguru_ecmwf_score=windguru_ecmwf_score,
     )
     scores = [s for s, _ in inputs.values()]
     source_score_spread = round(max(scores) - min(scores), 2) if len(scores) >= 2 else 0.0
@@ -535,16 +554,18 @@ def _confidence_detail(sf_score, om_score, ibi_score=None, gfs_score=None, weigh
 
 
 def _confidence(sf_score, om_score, ibi_score=None, gfs_score=None, weights=None,
-                surfline_score=None, windguru_score=None):
+                surfline_score=None, windguru_score=None, windguru_ecmwf_score=None):
     detail = _confidence_detail(
         sf_score, om_score, ibi_score, gfs_score, weights,
         surfline_score=surfline_score,
         windguru_score=windguru_score,
+        windguru_ecmwf_score=windguru_ecmwf_score,
     )
     inputs = _blend_inputs(
         sf_score, om_score, ibi_score, gfs_score, weights,
         surfline_score=surfline_score,
         windguru_score=windguru_score,
+        windguru_ecmwf_score=windguru_ecmwf_score,
     )
     n = len(inputs)
     if n == 0:
@@ -556,7 +577,7 @@ def _confidence(sf_score, om_score, ibi_score=None, gfs_score=None, weights=None
 
 
 def _consensus_score(sf_score, om_score, ibi_score=None, gfs_score=None,
-                     surfline_score=None, windguru_score=None,
+                     surfline_score=None, windguru_score=None, windguru_ecmwf_score=None,
                      extra_penalty=0.0, weights=None):
     weights = weights or BASE_WEIGHTS
     base = _weighted_geometric(
@@ -568,6 +589,8 @@ def _consensus_score(sf_score, om_score, ibi_score=None, gfs_score=None,
         surfline_weight=weights.get("surfline", SURFLINE_WEIGHT),
         windguru_score=windguru_score,
         windguru_weight=weights.get("windguru", WINDGURU_WEIGHT),
+        windguru_ecmwf_score=windguru_ecmwf_score,
+        windguru_ecmwf_weight=weights.get("windguru_ecmwf", WINDGURU_ECMWF_WEIGHT),
         om_weight=weights.get("om", OM_WEIGHT),
         ibi_weight=weights.get("ibi", IBI_WEIGHT),
         gfs_score=gfs_score,
@@ -775,13 +798,14 @@ def _model_severe_hard_gate(row, spot, source, level="improver"):
 
 
 def _hard_gate(sf_data, om_analysis, ibi_analysis=None, gfs_analysis=None, spot=None, level="improver",
-               surfline_analysis=None, windguru_analysis=None):
+               surfline_analysis=None, windguru_analysis=None, windguru_ecmwf_analysis=None):
     sf_data = sf_data or {}
     om = om_analysis if isinstance(om_analysis, dict) else {}
     ibi = ibi_analysis if isinstance(ibi_analysis, dict) else {}
     gfs = gfs_analysis if isinstance(gfs_analysis, dict) else {}
     surfline = surfline_analysis if isinstance(surfline_analysis, dict) else {}
     windguru = windguru_analysis if isinstance(windguru_analysis, dict) else {}
+    windguru_ecmwf = windguru_ecmwf_analysis if isinstance(windguru_ecmwf_analysis, dict) else {}
     sf_reds = _red_detail_labels(sf_data.get("details"))
     surfline_reds = _red_detail_labels(surfline.get("surfline_details"))
     windguru_reds = _red_detail_labels(windguru.get("windguru_details"))
@@ -813,7 +837,14 @@ def _hard_gate(sf_data, om_analysis, ibi_analysis=None, gfs_analysis=None, spot=
         if label in _IBI_HARD_GATE_LABELS:
             return {"blocked": True, "reason": _label_reason(label), "source": f"ibi_{label.lower()}"}
 
-    for source, analysis in (("surfline", surfline), ("windguru", windguru), ("om", om), ("gfs", gfs), ("ibi", ibi)):
+    for source, analysis in (
+        ("surfline", surfline),
+        ("windguru", windguru),
+        ("windguru_ecmwf", windguru_ecmwf),
+        ("om", om),
+        ("gfs", gfs),
+        ("ibi", ibi),
+    ):
         gate = _model_severe_hard_gate(analysis, spot or {}, source, level=level)
         if gate.get("blocked"):
             return gate
@@ -1354,7 +1385,8 @@ def _score_gfs_hour(row, spot, level, tide_color=None):
 
 
 def _score_hour(hour_dt, sf_cells, om_by_hour, spot, level="improver", tide_events=None, require_sf=False,
-                gfs_by_hour=None, ibi_by_hour=None, surfline_by_hour=None, windguru_by_hour=None):
+                gfs_by_hour=None, ibi_by_hour=None, surfline_by_hour=None, windguru_by_hour=None,
+                windguru_ecmwf_by_hour=None):
     sf_cell = _nearest_sf_cell(hour_dt, sf_cells)
     sf_raw = sf_cell.get("rating") if sf_cell else None
     sf_is_gold = bool(sf_cell.get("sf_is_gold_star")) if sf_cell else False
@@ -1362,6 +1394,7 @@ def _score_hour(hour_dt, sf_cells, om_by_hour, spot, level="improver", tide_even
     om_row = om_by_hour.get(_hour_key(hour_dt))
     surfline_row = (surfline_by_hour or {}).get(_hour_key(hour_dt))
     windguru_row = (windguru_by_hour or {}).get(_hour_key(hour_dt))
+    windguru_ecmwf_row = (windguru_ecmwf_by_hour or {}).get(_hour_key(hour_dt))
     gfs_row = (gfs_by_hour or {}).get(_hour_key(hour_dt))
     ibi_row = (ibi_by_hour or {}).get(_hour_key(hour_dt))
     sl_tier, sl_source = _surfline_curation_tier(surfline_row)
@@ -1372,13 +1405,17 @@ def _score_hour(hour_dt, sf_cells, om_by_hour, spot, level="improver", tide_even
     om_score = _score_om_hour(om_row, spot, level, tide_color=tide_effect.get("color"))
     surfline_score = _score_model_row(surfline_row, spot, level, tide_color=tide_effect.get("color"))
     windguru_score = _score_model_row(windguru_row, spot, level, tide_color=tide_effect.get("color"))
+    windguru_ecmwf_score = _score_model_row(windguru_ecmwf_row, spot, level, tide_color=tide_effect.get("color"))
     gfs_score = _score_gfs_hour(gfs_row, spot, level, tide_color=tide_effect.get("color"))
     ibi_score = _score_ibi_hour_with_om_wind(ibi_row, om_row, spot, level=level, tide_color=tide_effect.get("color"))
-    if sf_score is None and surfline_score is None and windguru_score is None and om_score is None and gfs_score is None and ibi_score is None:
+    if (sf_score is None and surfline_score is None and windguru_score is None
+            and windguru_ecmwf_score is None and om_score is None and gfs_score is None
+            and ibi_score is None):
         return None
     hard_gate = _om_hour_hard_gate(om_row, spot, "om")
     surfline_gate = _om_hour_hard_gate(surfline_row, spot, "surfline")
     windguru_gate = _om_hour_hard_gate(windguru_row, spot, "windguru")
+    windguru_ecmwf_gate = _om_hour_hard_gate(windguru_ecmwf_row, spot, "windguru_ecmwf")
     gfs_gate = _om_hour_hard_gate(gfs_row, spot, "gfs")
     ibi_gate = _om_hour_hard_gate(ibi_row, spot, "ibi")
     tide_gate = tide_effect.get("gate") or {}
@@ -1393,6 +1430,10 @@ def _score_hour(hour_dt, sf_cells, om_by_hour, spot, level="improver", tide_even
         blocked_by.append(windguru_gate.get("source") or "windguru_gate")
         if not hard_gate.get("blocked"):
             hard_gate = windguru_gate
+    if windguru_ecmwf_gate.get("blocked"):
+        blocked_by.append(windguru_ecmwf_gate.get("source") or "windguru_ecmwf_gate")
+        if not hard_gate.get("blocked"):
+            hard_gate = windguru_ecmwf_gate
     if gfs_gate.get("blocked"):
         blocked_by.append(gfs_gate.get("source") or "gfs_gate")
         if not hard_gate.get("blocked"):
@@ -1429,6 +1470,8 @@ def _score_hour(hour_dt, sf_cells, om_by_hour, spot, level="improver", tide_even
         blocked_by.append("surfline_gap")
     if windguru_row is not None and windguru_score is None:
         blocked_by.append("windguru_gap")
+    if windguru_ecmwf_row is not None and windguru_ecmwf_score is None:
+        blocked_by.append("windguru_ecmwf_gap")
     if gfs_row is not None and gfs_score is None:
         blocked_by.append("gfs_gap")
     if ibi_row is not None and ibi_score is None:
@@ -1438,11 +1481,13 @@ def _score_hour(hour_dt, sf_cells, om_by_hour, spot, level="improver", tide_even
         sf_score, om_score, gfs_score, ibi_score,
         surfline_score=surfline_score,
         windguru_score=windguru_score,
+        windguru_ecmwf_score=windguru_ecmwf_score,
     )
     weights = _adaptive_weights(
         sf=sf_cell,
         surfline=_normalize_model_row(surfline_row) if surfline_row else None,
         windguru=_normalize_model_row(windguru_row) if windguru_row else None,
+        windguru_ecmwf=_normalize_model_row(windguru_ecmwf_row) if windguru_ecmwf_row else None,
         om=_normalize_model_row(om_row) if om_row else None,
         gfs=_normalize_model_row(gfs_row) if gfs_row else None,
         ibi=_normalize_model_row(ibi_row) if ibi_row else None,
@@ -1456,6 +1501,7 @@ def _score_hour(hour_dt, sf_cells, om_by_hour, spot, level="improver", tide_even
         ibi_score,
         surfline_score=surfline_score,
         windguru_score=windguru_score,
+        windguru_ecmwf_score=windguru_ecmwf_score,
         gfs_score=gfs_score,
         weights=weights,
     )
@@ -1474,12 +1520,14 @@ def _score_hour(hour_dt, sf_cells, om_by_hour, spot, level="improver", tide_even
         "sf_score": sf_score,
         "surfline_score": surfline_score,
         "windguru_score": windguru_score,
+        "windguru_ecmwf_score": windguru_ecmwf_score,
         "om_score": om_score,
         "gfs_score": gfs_score,
         "ibi_score": ibi_score,
         "om_row": om_row,
         "surfline_row": surfline_row,
         "windguru_row": windguru_row,
+        "windguru_ecmwf_row": windguru_ecmwf_row,
         "gfs_row": gfs_row,
         "ibi_row": ibi_row,
         "decider_score": decider_score,
@@ -1492,6 +1540,7 @@ def _score_hour(hour_dt, sf_cells, om_by_hour, spot, level="improver", tide_even
             sf_score, om_score, ibi_score, gfs_score=gfs_score, weights=weights,
             surfline_score=surfline_score,
             windguru_score=windguru_score,
+            windguru_ecmwf_score=windguru_ecmwf_score,
         ),
         "confidence_detail": _confidence_detail(
             sf_score,
@@ -1501,13 +1550,15 @@ def _score_hour(hour_dt, sf_cells, om_by_hour, spot, level="improver", tide_even
             weights=weights,
             surfline_score=surfline_score,
             windguru_score=windguru_score,
-            rows=[row for row in (surfline_row, windguru_row, om_row, gfs_row, ibi_row) if row],
+            windguru_ecmwf_score=windguru_ecmwf_score,
+            rows=[row for row in (surfline_row, windguru_row, windguru_ecmwf_row, om_row, gfs_row, ibi_row) if row],
         ),
         "weights": weights,
         "factor_scores": {
             "om": _model_factor_scores(om_row, spot, level, tide_color=tide_effect.get("color")),
             "surfline": _model_factor_scores(surfline_row, spot, level, tide_color=tide_effect.get("color")),
             "windguru": _model_factor_scores(windguru_row, spot, level, tide_color=tide_effect.get("color")),
+            "windguru_ecmwf": _model_factor_scores(windguru_ecmwf_row, spot, level, tide_color=tide_effect.get("color")),
             "gfs": _model_factor_scores(gfs_row, spot, level, tide_color=tide_effect.get("color")),
             "ibi": _model_factor_scores(ibi_row, spot, level, tide_color=tide_effect.get("color")),
             "tide": tide_suitability(tide_effect.get("color")),
@@ -1535,12 +1586,14 @@ def _score_sf_cell(cell, tide_events=None, spot=None):
         "sf_score": sf_score,
         "surfline_score": None,
         "windguru_score": None,
+        "windguru_ecmwf_score": None,
         "om_score": None,
         "gfs_score": None,
         "ibi_score": None,
         "om_row": None,
         "surfline_row": None,
         "windguru_row": None,
+        "windguru_ecmwf_row": None,
         "gfs_row": None,
         "ibi_row": None,
         "decider_score": score,
@@ -1551,7 +1604,15 @@ def _score_sf_cell(cell, tide_events=None, spot=None):
         "blocked_by": blocked_by,
         "confidence": "sf_only",
         "confidence_detail": _confidence_detail(sf_score, None, None),
-        "weights": {"sf": 1.0, "surfline": 0.0, "windguru": 0.0, "om": 0.0, "gfs": 0.0, "ibi": 0.0},
+        "weights": {
+            "sf": 1.0,
+            "surfline": 0.0,
+            "windguru": 0.0,
+            "windguru_ecmwf": 0.0,
+            "om": 0.0,
+            "gfs": 0.0,
+            "ibi": 0.0,
+        },
         "factor_scores": {
             "sf": {"tide": tide_suitability(tide_effect.get("color"))},
             "tide": tide_suitability(tide_effect.get("color")),
@@ -1855,6 +1916,10 @@ def _score_components(block):
             "sf_score": round(row["sf_score"], 1) if row.get("sf_score") is not None else None,
             "surfline_score": round(row["surfline_score"], 1) if row.get("surfline_score") is not None else None,
             "windguru_score": round(row["windguru_score"], 1) if row.get("windguru_score") is not None else None,
+            "windguru_ecmwf_score": (
+                round(row["windguru_ecmwf_score"], 1)
+                if row.get("windguru_ecmwf_score") is not None else None
+            ),
             "om_score": round(row["om_score"], 1) if row.get("om_score") is not None else None,
             "gfs_score": round(row["gfs_score"], 1) if row.get("gfs_score") is not None else None,
             "ibi_score": round(row["ibi_score"], 1) if row.get("ibi_score") is not None else None,
@@ -1885,7 +1950,7 @@ def _row_has_tide_observation(row):
 def _window_weighted_factor_scores(block):
     """Blend per-source factor scores into one practical view for the window."""
     factors = ("height", "power", "period", "wind", "chop", "direction", "tide")
-    source_order = ("om", "surfline", "windguru", "gfs", "ibi")
+    source_order = _MODEL_SOURCE_ORDER
     blended = {}
 
     for factor in factors:
@@ -1920,9 +1985,10 @@ def _window_weighted_factor_scores(block):
     return {key: value for key, value in blended.items() if value is not None}
 
 
-_MODEL_SOURCE_ORDER = ("om", "surfline", "windguru", "gfs", "ibi")
+_MODEL_SOURCE_ORDER = ("om", "windguru_ecmwf", "surfline", "windguru", "gfs", "ibi")
 _MODEL_ROW_KEY = {
     "om": "om_row",
+    "windguru_ecmwf": "windguru_ecmwf_row",
     "surfline": "surfline_row",
     "windguru": "windguru_row",
     "gfs": "gfs_row",
@@ -2423,6 +2489,7 @@ def _window_payload(block, now_dt, spot, level="improver"):
             score,
             has_om=any(
                 row.get("om_score") is not None
+                or row.get("windguru_ecmwf_score") is not None
                 or row.get("surfline_score") is not None
                 or row.get("windguru_score") is not None
                 or row.get("gfs_score") is not None
@@ -2474,7 +2541,7 @@ def _now_tier(scored_hours, now_dt):
 
 def find_next_windows(rating_timeline, om_hourly, spot, sf_now_utc, tide=None,
                       gfs_hourly=None, ibi_hourly=None, level="improver",
-                      surfline_hourly=None, windguru_hourly=None):
+                      surfline_hourly=None, windguru_hourly=None, windguru_ecmwf_hourly=None):
     now_dt = _parse_dt(sf_now_utc) or datetime.now(timezone.utc)
     cutoff = now_dt + timedelta(days=7)
     spot = spot or {}
@@ -2482,13 +2549,21 @@ def find_next_windows(rating_timeline, om_hourly, spot, sf_now_utc, tide=None,
     om_hours = _om_by_hour(om_hourly)
     surfline_hours = _om_by_hour(surfline_hourly)
     windguru_hours = _om_by_hour(windguru_hourly)
+    windguru_ecmwf_hours = _om_by_hour(windguru_ecmwf_hourly)
     gfs_hours = _om_by_hour(gfs_hourly)
     ibi_hours = _om_by_hour(ibi_hourly)
     tide_events = tide.get("events") if isinstance(tide, dict) else tide
 
     scored = []
     sf_timeline_end = (sf_cells[-1]["dt"] + timedelta(hours=3)) if sf_cells else None
-    model_hours = sorted(set(surfline_hours) | set(windguru_hours) | set(om_hours) | set(gfs_hours) | set(ibi_hours))
+    model_hours = sorted(
+        set(surfline_hours)
+        | set(windguru_hours)
+        | set(windguru_ecmwf_hours)
+        | set(om_hours)
+        | set(gfs_hours)
+        | set(ibi_hours)
+    )
     if model_hours:
         for hour_dt in model_hours:
             if hour_dt < now_dt.replace(minute=0, second=0, microsecond=0):
@@ -2509,6 +2584,7 @@ def find_next_windows(rating_timeline, om_hourly, spot, sf_now_utc, tide=None,
                 require_sf=require_sf,
                 surfline_by_hour=surfline_hours,
                 windguru_by_hour=windguru_hours,
+                windguru_ecmwf_by_hour=windguru_ecmwf_hours,
                 gfs_by_hour=gfs_hours,
                 ibi_by_hour=ibi_hours,
             )
@@ -2588,6 +2664,8 @@ def unify(
     surfline_hourly=None,
     windguru_analysis=None,
     windguru_hourly=None,
+    windguru_ecmwf_analysis=None,
+    windguru_ecmwf_hourly=None,
 ):
     sf_data = sf_data or {}
     spot = spot or {}
@@ -2600,6 +2678,12 @@ def unify(
         sf_score = _apply_tide_to_score(_current_sf_score(sf_data, surfline_analysis=surfline_analysis), tide_color)
         surfline_score = _current_surfline_score(surfline_analysis, spot, level, tide_color=tide_color)
         windguru_score = _current_windguru_score(windguru_analysis, spot, level, tide_color=tide_color)
+        windguru_ecmwf_score = _current_windguru_score(
+            windguru_ecmwf_analysis,
+            spot,
+            level,
+            tide_color=tide_color,
+        )
         om_score = _current_om_score(om_analysis, spot, level, tide_color=tide_color)
         gfs_score = _current_gfs_score(gfs_analysis, spot, level, tide_color=tide_color)
         ibi_score = _current_ibi_score(ibi_analysis, spot, om_analysis, level=level, tide_color=tide_color)
@@ -2612,6 +2696,7 @@ def unify(
             level=level,
             surfline_analysis=surfline_analysis,
             windguru_analysis=windguru_analysis,
+            windguru_ecmwf_analysis=windguru_ecmwf_analysis,
         )
         tide_gate = tide_effect.get("gate") or {}
         if tide_gate.get("blocked") and not hard_gate.get("blocked"):
@@ -2620,11 +2705,13 @@ def unify(
             sf_score, om_score, gfs_score, ibi_score,
             surfline_score=surfline_score,
             windguru_score=windguru_score,
+            windguru_ecmwf_score=windguru_ecmwf_score,
         )
         weights = _adaptive_weights(
             sf=sf_data,
             surfline=_normalize_model_row(surfline_analysis) if surfline_analysis else None,
             windguru=_normalize_model_row(windguru_analysis) if windguru_analysis else None,
+            windguru_ecmwf=_normalize_model_row(windguru_ecmwf_analysis) if windguru_ecmwf_analysis else None,
             om=_normalize_model_row(om_analysis) if om_analysis else None,
             gfs=_normalize_model_row(gfs_analysis) if gfs_analysis else None,
             ibi=_normalize_model_row(ibi_analysis) if ibi_analysis else None,
@@ -2637,6 +2724,7 @@ def unify(
             ibi_score,
             surfline_score=surfline_score,
             windguru_score=windguru_score,
+            windguru_ecmwf_score=windguru_ecmwf_score,
             gfs_score=gfs_score,
             weights=weights,
         )
@@ -2648,6 +2736,7 @@ def unify(
             weights=weights,
             surfline_score=surfline_score,
             windguru_score=windguru_score,
+            windguru_ecmwf_score=windguru_ecmwf_score,
         )
         confidence_detail = _confidence_detail(
             sf_score,
@@ -2657,11 +2746,13 @@ def unify(
             weights=weights,
             surfline_score=surfline_score,
             windguru_score=windguru_score,
+            windguru_ecmwf_score=windguru_ecmwf_score,
             rows=[
                 row
                 for row in (
                     _normalize_model_row(surfline_analysis) if surfline_analysis else None,
                     _normalize_model_row(windguru_analysis) if windguru_analysis else None,
+                    _normalize_model_row(windguru_ecmwf_analysis) if windguru_ecmwf_analysis else None,
                     _normalize_model_row(om_analysis) if om_analysis else None,
                     _normalize_model_row(gfs_analysis) if gfs_analysis else None,
                     _normalize_model_row(ibi_analysis) if ibi_analysis else None,
@@ -2682,6 +2773,7 @@ def unify(
             ibi_hourly=ibi_hourly or [],
             surfline_hourly=surfline_hourly or [],
             windguru_hourly=windguru_hourly or [],
+            windguru_ecmwf_hourly=windguru_ecmwf_hourly or [],
             level=level,
         )
         reason = _decision_reason(
@@ -2700,6 +2792,7 @@ def unify(
             weights,
             surfline_score=surfline_score,
             windguru_score=windguru_score,
+            windguru_ecmwf_score=windguru_ecmwf_score,
         ).keys())
 
         return {
@@ -2726,6 +2819,10 @@ def unify(
                 "sf":  round(sf_score, 1)  if sf_score  is not None else None,
                 "surfline": round(surfline_score, 1) if surfline_score is not None else None,
                 "windguru": round(windguru_score, 1) if windguru_score is not None else None,
+                "windguru_ecmwf": (
+                    round(windguru_ecmwf_score, 1)
+                    if windguru_ecmwf_score is not None else None
+                ),
                 "om":  round(om_score, 1)  if om_score  is not None else None,
                 "gfs": round(gfs_score, 1) if gfs_score is not None else None,
                 "ibi": round(ibi_score, 1) if ibi_score is not None else None,
@@ -2734,6 +2831,7 @@ def unify(
             "factor_scores": {
                 "surfline": _model_factor_scores(surfline_analysis, spot, level, tide_color=tide_color),
                 "windguru": _model_factor_scores(windguru_analysis, spot, level, tide_color=tide_color),
+                "windguru_ecmwf": _model_factor_scores(windguru_ecmwf_analysis, spot, level, tide_color=tide_color),
                 "om": _model_factor_scores(om_analysis, spot, level, tide_color=tide_color),
                 "gfs": _model_factor_scores(gfs_analysis, spot, level, tide_color=tide_color),
                 "ibi": _model_factor_scores(ibi_analysis, spot, level, tide_color=tide_color),
@@ -2769,8 +2867,24 @@ def unify(
             "decision_reason": "There is not enough clean data to make a confident call.",
             "level": level,
             "sources_used": [],
-            "source_scores": {"sf": None, "surfline": None, "windguru": None, "om": None, "gfs": None, "ibi": None},
-            "weights": {"sf": 0.0, "surfline": 0.0, "windguru": 0.0, "om": 0.0, "gfs": 0.0, "ibi": 0.0},
+            "source_scores": {
+                "sf": None,
+                "surfline": None,
+                "windguru": None,
+                "windguru_ecmwf": None,
+                "om": None,
+                "gfs": None,
+                "ibi": None,
+            },
+            "weights": {
+                "sf": 0.0,
+                "surfline": 0.0,
+                "windguru": 0.0,
+                "windguru_ecmwf": 0.0,
+                "om": 0.0,
+                "gfs": 0.0,
+                "ibi": 0.0,
+            },
             "factor_scores": {},
             "hard_gate_detail": {"blocked": False, "reason": None, "source": None},
             "scoring_model": "doctrine_v2_geometric_suitability",

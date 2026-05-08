@@ -23,6 +23,24 @@ ROOT = Path(__file__).resolve().parent
 SPOTS = json.loads((ROOT / "spots.json").read_text(encoding="utf-8"))
 ALL_LEVELS = ("beginner", "improver", "intermediate", "advanced")
 SOURCE_FETCH_BUDGET_SECONDS = 35.0
+_WINDGURU_ECMWF_REQUIRED_FIELDS = (
+    "timestamp_utc",
+    "wave_height",
+    "wave_period",
+    "wave_direction",
+    "swell_height",
+    "swell_period",
+    "swell_direction",
+    "swell2_height",
+    "swell2_period",
+    "swell2_direction",
+    "wind_wave_height",
+    "wind_wave_period",
+    "wind_wave_direction",
+    "wind_speed_kmh",
+    "wind_direction_deg",
+    "wind_gusts_kmh",
+)
 
 
 def get_spot(spot_id):
@@ -31,6 +49,19 @@ def get_spot(spot_id):
 
 def _source(data=None, error=None):
     return {"data": data, "error": error}
+
+
+def _validate_windguru_ecmwf_payload(payload):
+    hourly = payload.get("hourly") if isinstance(payload, dict) else None
+    if not hourly:
+        raise ValueError("Windguru ECMWF returned no hourly rows")
+    if not any(
+        all(row.get(field) is not None for field in _WINDGURU_ECMWF_REQUIRED_FIELDS)
+        for row in hourly
+        if isinstance(row, dict)
+    ):
+        raise ValueError("Windguru ECMWF returned no complete ifs/ifsw scoring rows")
+    return payload
 
 
 def fetch_sources_for_spot(spot):
@@ -47,6 +78,7 @@ def fetch_sources_for_spot(spot):
         "ibi": _source(),
         "surfline": _source(),
         "windguru": _source(),
+        "windguru_ecmwf": _source(),
     }
 
     def fetch_sf():
@@ -74,6 +106,22 @@ def fetch_sources_for_spot(spot):
             results["windguru"] = _source(windguru.fetch(wg_id))
         except Exception as e:
             results["windguru"] = _source(error=str(e))
+
+    def fetch_windguru_ecmwf():
+        wg_id = spot.get("windguru_spot_id")
+        if not wg_id:
+            results["windguru_ecmwf"] = _source(error="No Windguru spot id configured")
+            return
+        try:
+            payload = windguru.fetch(
+                wg_id,
+                wind_model="ifs",
+                wave_model="ifsw",
+                source_name="windguru_ecmwf",
+            )
+            results["windguru_ecmwf"] = _source(_validate_windguru_ecmwf_payload(payload))
+        except Exception as e:
+            results["windguru_ecmwf"] = _source(error=f"Windguru ECMWF fetch failed: {e}")
 
     def fetch_om():
         lat, lon = spot.get("lat"), spot.get("lon")
@@ -113,6 +161,7 @@ def fetch_sources_for_spot(spot):
         ("sf", fetch_sf),
         ("surfline", fetch_surfline),
         ("windguru", fetch_windguru),
+        ("windguru_ecmwf", fetch_windguru_ecmwf),
         ("om", fetch_om),
         ("gfs", fetch_gfs),
         ("ibi", fetch_ibi),
@@ -195,6 +244,21 @@ def build_payload(spot, sources, level=explainer.DEFAULT_LEVEL):
         data["windguru_hourly"] = []
         data["windguru_error"] = windguru_source.get("error") or "Windguru fetch failed"
 
+    windguru_ecmwf_source = sources.get("windguru_ecmwf", {})
+    windguru_ecmwf_data = windguru_ecmwf_source.get("data")
+    if windguru_ecmwf_data and not windguru_ecmwf_source.get("error"):
+        data["windguru_ecmwf_analysis"] = windguru_ecmwf_data.get("current")
+        data["windguru_ecmwf_hourly"] = windguru_ecmwf_data.get("hourly", [])
+        data["windguru_ecmwf_error"] = None
+        if windguru_ecmwf_data.get("sst_c") is not None:
+            data["windguru_ecmwf_sst_c"] = windguru_ecmwf_data.get("sst_c")
+    else:
+        data["windguru_ecmwf_analysis"] = None
+        data["windguru_ecmwf_hourly"] = []
+        data["windguru_ecmwf_error"] = (
+            windguru_ecmwf_source.get("error") or "Windguru ECMWF fetch failed"
+        )
+
     gfs = sources.get("gfs", {})
     gfs_data = gfs.get("data")
     if gfs_data and not gfs.get("error"):
@@ -242,6 +306,8 @@ def build_payload(spot, sources, level=explainer.DEFAULT_LEVEL):
         surfline_hourly=data.get("surfline_hourly"),
         windguru_analysis=data.get("windguru_analysis"),
         windguru_hourly=data.get("windguru_hourly"),
+        windguru_ecmwf_analysis=data.get("windguru_ecmwf_analysis"),
+        windguru_ecmwf_hourly=data.get("windguru_ecmwf_hourly"),
     )
 
     return data

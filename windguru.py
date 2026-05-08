@@ -16,15 +16,19 @@ USER_AGENT = (
 )
 KTS_TO_KMH = 1.852
 
-WIND_URL = (
-    "https://micro.windguru.cz/?s={spot_id}&m=gfs&"
-    "v=WSPD,WDIRN,WDEG,GUST,TMP"
-)
-WAVE_URL = (
-    "https://micro.windguru.cz/?s={spot_id}&m=gfswh&"
-    "v=HTSGW,WADIRN,WADEG,PERPW,SWELL1,SWDIRN1,SWDEG1,SWPER1,"
+_WIND_VARS = "WSPD,WDIRN,WDEG,GUST,TMP"
+_WAVE_VARS = (
+    "HTSGW,WADIRN,WADEG,PERPW,SWELL1,SWDIRN1,SWDEG1,SWPER1,"
     "SWELL2,SWDIRN2,SWDEG2,SWPER2,WVHGT,WVDIRN,WVDEG,WVPER"
 )
+
+
+def _wind_url(spot_id, model="gfs"):
+    return f"https://micro.windguru.cz/?s={spot_id}&m={model}&v={_WIND_VARS}"
+
+
+def _wave_url(spot_id, model="gfswh"):
+    return f"https://micro.windguru.cz/?s={spot_id}&m={model}&v={_WAVE_VARS}"
 
 _ROW_RE = re.compile(r"^\s*(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(\d+)\.\s+(\d+)h\s+(.+?)\s*$", re.IGNORECASE)
 
@@ -215,7 +219,10 @@ def parse(wind_html, wave_html, now_utc=None):
     }
 
 
-def fetch(spot_id, now_utc=None):
-    wind_html = fetch_text(WIND_URL.format(spot_id=spot_id))
-    wave_html = fetch_text(WAVE_URL.format(spot_id=spot_id))
-    return parse(wind_html, wave_html, now_utc=now_utc)
+def fetch(spot_id, now_utc=None, wind_model="gfs", wave_model="gfswh", source_name="windguru"):
+    wind_html = fetch_text(_wind_url(spot_id, wind_model))
+    wave_html = fetch_text(_wave_url(spot_id, wave_model))
+    payload = parse(wind_html, wave_html, now_utc=now_utc)
+    payload["source"] = source_name
+    payload["model"] = {"wind": wind_model, "wave": wave_model}
+    return payload

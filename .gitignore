@@ -6,3 +6,5 @@ __pycache__/
 
 .vercel
 scripts/cross_check_log.csv
+server.log
+server.err.log

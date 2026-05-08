@@ -1,6 +1,6 @@
 # Lineup - surf forecast app
 
-A personal surf conditions tool for Carcavelos and Costa da Caparica | Praia do CDS (Lisbon area). Blends six data sources — surf-forecast.com (scraped), Surfline (LOLA model + forecaster ratings), Open-Meteo Marine, NOAA GFS Wave, Copernicus Marine IBI, and Windguru (GFS-backed) — through the doctrine V2 geometric suitability engine, then serves a dark-mode single-page frontend. Stdlib Python only.
+A personal surf conditions tool for Carcavelos and Costa da Caparica | Praia do CDS (Lisbon area). Blends seven data sources - surf-forecast.com (scraped), Surfline (LOLA model + forecaster ratings), Open-Meteo Marine, NOAA GFS Wave, Copernicus Marine IBI, Windguru GFS, and Windguru ECMWF - through the doctrine V2 geometric suitability engine, then serves a dark-mode single-page frontend. Stdlib Python only.
 
 ## Live deployment
 
@@ -20,7 +20,7 @@ noaa_gfs_explainer.py         - GFS scorer (reuses OM graders)
 copernicus_ibi.py             - Copernicus Marine IBI WMS client (auth req'd)
 copernicus_ibi_explainer.py   - IBI scorer (reuses OM graders)
 surfline.py                   - Surfline JSON API client (wave/wind/tide + condition ratings)
-windguru.py                   - Windguru micro.windguru.cz plaintext parser (GFS-backed)
+windguru.py                   - Windguru micro.windguru.cz plaintext parser (GFS + ECMWF model pairs)
 unified_explainer.py          - N-source geometric blend, confidence, hard gates + windowing
 server.py                     - local dev server (port 8765)
 api/spots.py                  - Vercel serverless: GET /api/spots
@@ -32,7 +32,7 @@ public/index.html             - single-file frontend (vanilla JS)
 spots.json                    - spot config
 ```
 
-Production uses a latest-only Neon Postgres forecast cache. `spots.json` remains the only persistent spot config. All six sources are fetched in parallel by the refresh path, then `/api/sync` reads cached snapshots from Neon so page loads do not wait on upstream model/scraper calls.
+Production uses a latest-only Neon Postgres forecast cache. `spots.json` remains the only persistent spot config. All seven sources are fetched in parallel by the refresh path, then `/api/sync` reads cached snapshots from Neon so page loads do not wait on upstream model/scraper calls.
 
 ## Neon forecast cache
 
@@ -79,16 +79,17 @@ API behavior:
 
 | Source | Base weight | Role |
 |---|---:|---|
-| surf-forecast.com (SF) | 0.25 | Local human-curated rating + spot heuristics |
-| Open-Meteo Marine (OM) | 0.35 | Hourly wave/swell partitions + wind/gusts |
-| NOAA GFS Wave (GFS) | 0.20 | Independent global wave + wind model, using the 0.16 degree coastal grid |
+| surf-forecast.com (SF) | 0.23 | Local human-curated rating + spot heuristics |
+| Open-Meteo Marine (OM) | 0.32 | Hourly wave/swell partitions + wind/gusts |
+| NOAA GFS Wave (GFS) | 0.17 | Independent global wave + wind model, using the 0.16 degree coastal grid |
 | Copernicus IBI (IBI) | 0.05 | Regional MFWAM wave model, fused with OM wind |
 | Surfline | 0.10 | LOLA model wave/wind rows + local forecaster condition ratings |
-| Windguru | 0.05 | GFS-backed wind/wave display layer (UX consistency hedge; correlated with GFS) |
+| Windguru GFS | 0.03 | GFS-backed wind/wave display layer (UX consistency hedge; correlated with GFS) |
+| Windguru ECMWF | 0.10 | Active independent European physical model source using `m=ifs` wind + `m=ifsw` waves |
 
 Weights renormalize pro-rata when a source is unavailable and adapt slightly per hour when richer fields such as numeric wind, gusts, or complete wave partitions are present. These are temporary reliability priors, not calibrated final weights.
 
-Note: Windguru fetches `m=gfs`/`m=gfswh` from micro.windguru.cz — the same NOAA GFS model as source 3. It is intentionally low-weight to avoid double-counting GFS. Its main value is that it mirrors what you see at windguru.cz, keeping app scores consistent with the site. If you want a genuinely independent signal, switch `windguru.py` to `m=ecmwf` or `m=iconeu` (verify free-tier availability first).
+Note: the original Windguru source still fetches `m=gfs`/`m=gfswh` from micro.windguru.cz, so it remains deliberately low-weight to avoid double-counting GFS. The separate `windguru_ecmwf` source fetches `m=ifs` wind and `m=ifsw` waves, scored as an active 0.10-weight European model. If the ECMWF fetch fails, the payload exposes `windguru_ecmwf_error`; no fallback model is silently substituted.
 
 ## 2026-05 SF gold-star awareness
 
@@ -105,11 +106,11 @@ Scoring:
 - [`unified_explainer._SF_QUALITY_CURVE_GOLD`](unified_explainer.py) is a second curve with a lifted floor. `_sf_quality_score(rating, is_gold_star, surfline_tier, surfline_source)` picks the curve. Examples — rating 3: plain → 4.8, gold → 6.8, super-gold → 7.5, dampened → 3.5. Rating 5: plain → 6.8, gold → 8.2. Rating 2: plain → 3.5, gold → 5.5.
 - The `sf_low_rating` window-eligibility gate requires SF≤2 **and** non-gold **and** no Surfline-forecaster rescue **and** (OM missing or OM<5.5). A "2-gold" cell, a "2-white but OM=7.0" cell, or a "2-white but Surfline forecaster says GOOD/EPIC" cell is no longer vetoed from `top_windows`. A "2-white with OM=4.0 and no forecaster rescue" still gates out. Note: Surfline LOTUS-only ratings (model-generated) do NOT rescue the gate — only a human-forecaster-assigned GOOD or EPIC does. At Carcavelos/Caparica these are rare.
 
-Source weights were rebalanced from 0.25/0.35/0.25/0.15 (4-source era) to 0.25/0.35/0.20/0.05/0.10/0.05 (6-source, sum=1.00). SF's *informational* contribution now lives mainly in the curve choice; OM remains the highest-weight model source.
+Source weights were rebalanced from 0.25/0.35/0.20/0.05/0.10/0.05 (6-source era) to 0.23/0.32/0.17/0.05/0.10/0.03/0.10 (7-source, sum=1.00). SF's *informational* contribution now lives mainly in the curve choice; OM remains the highest-weight model source; Windguru ECMWF adds a distinct European physical model signal.
 
 ## 2026-05 Surfline + Windguru integration
 
-Surfline and Windguru are wired into both the local dev server ([`server.py`](server.py)) and the Vercel serverless endpoint ([`api/sync.py`](api/sync.py)).
+Surfline, Windguru GFS, and Windguru ECMWF are wired into both the local dev server ([`server.py`](server.py)) and the Vercel serverless endpoint ([`api/sync.py`](api/sync.py)).
 
 **`spots.json` fields required:** `surfline_spot_id` (the hex ID from the Surfline URL) and `windguru_spot_id` (the numeric station ID).
 
@@ -135,9 +136,9 @@ The curve picked for a given SF rating cell now depends on `(sf_is_gold, surflin
 | `_SF_QUALITY_CURVE` | SF plain with neutral/missing Surfline, or gold + poor Surfline |
 | `_SF_QUALITY_CURVE_DAMPENED` | SF plain + Surfline `poor` (both forecasters say bad local fit) |
 
-### Windguru — low-weight GFS hedge
+### Windguru GFS and ECMWF
 
-Windguru fetches from `micro.windguru.cz/?m=gfs` and `m=gfswh` — literally the same NOAA GFS run as `noaa_gfs.py`. It is intentionally weighted at 0.05 to avoid double-counting GFS while keeping app scores numerically consistent with what you see on windguru.cz. The `_WINDGURU_HARD_GATE_LABELS` set is empty; Windguru never triggers hard gates. If you want Windguru to add genuine independent signal, change `windguru.py` to use `m=ecmwf` or `m=iconeu` and verify those are available on the free micro endpoint.
+Windguru GFS fetches from `micro.windguru.cz/?m=gfs` and `m=gfswh`, which is correlated with the NOAA GFS path. It is weighted at 0.03 and mostly keeps app scores consistent with the familiar Windguru surface. Windguru ECMWF is a separate active source using `m=ifs` wind and `m=ifsw` waves at weight 0.10. Live checks on 2026-05-07 showed complete model-scoring indicators for Carcavelos and Caparica through at least 2026-05-22 12:00 UTC, but the app still ranks windows over the existing 7-day horizon. The `_WINDGURU_HARD_GATE_LABELS` set is empty; both Windguru sources gate only through the shared severe physical model gate.
 
 ## 2026-05 top-5 windows carousel
 

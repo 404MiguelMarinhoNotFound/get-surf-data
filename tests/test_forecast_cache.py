@@ -70,6 +70,33 @@ class ForecastCacheMappingTests(unittest.TestCase):
         self.assertEqual(row["air_temp_c"], 21.5)
         self.assertEqual(row["raw"]["wave_height"], 1.23)
 
+    def test_source_hourly_rows_include_windguru_ecmwf(self):
+        from forecast_cache import _source_hourly_rows
+
+        rows = _source_hourly_rows(
+            spot_id="carcavelos",
+            run_id="00000000-0000-0000-0000-000000000001",
+            sources={
+                "windguru_ecmwf": {
+                    "data": {
+                        "hourly": [
+                            {
+                                "timestamp_utc": "2026-05-07T09:00:00+00:00",
+                                "wave_height": 1.2,
+                                "wave_period": 11,
+                                "wind_speed_kmh": 8,
+                            }
+                        ]
+                    }
+                }
+            },
+            payload={},
+        )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["source"], "windguru_ecmwf")
+        self.assertEqual(rows[0]["wave_height"], 1.2)
+
 
 class ForecastCacheReadTests(unittest.TestCase):
     def test_empty_snapshot_error_shape_is_explicit(self):

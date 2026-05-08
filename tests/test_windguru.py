@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 import windguru
 
@@ -51,6 +52,31 @@ class WindguruParserTests(unittest.TestCase):
         current = parsed["current"]
         self.assertEqual(current["timestamp_utc"], "2026-05-03T12:00:00+00:00")
         self.assertEqual(current["windguru_fetched_at"], "2026-05-03T12:15:00+00:00")
+
+    def test_model_url_helpers_preserve_gfs_defaults(self):
+        self.assertEqual(
+            windguru._wind_url(1060),
+            "https://micro.windguru.cz/?s=1060&m=gfs&v=WSPD,WDIRN,WDEG,GUST,TMP",
+        )
+        self.assertIn("m=gfswh", windguru._wave_url(1060))
+        self.assertIn("HTSGW,WADIRN,WADEG,PERPW", windguru._wave_url(1060))
+
+    def test_fetch_accepts_ecmwf_models_and_source_name(self):
+        now = datetime(2026, 5, 3, 12, 15, tzinfo=timezone.utc)
+        with patch.object(windguru, "fetch_text", side_effect=[WIND_HTML, WAVE_HTML]) as fetch_text:
+            parsed = windguru.fetch(
+                1060,
+                now_utc=now,
+                wind_model="ifs",
+                wave_model="ifsw",
+                source_name="windguru_ecmwf",
+            )
+
+        self.assertEqual(fetch_text.call_args_list[0].args[0], windguru._wind_url(1060, "ifs"))
+        self.assertEqual(fetch_text.call_args_list[1].args[0], windguru._wave_url(1060, "ifsw"))
+        self.assertEqual(parsed["source"], "windguru_ecmwf")
+        self.assertEqual(parsed["model"], {"wind": "ifs", "wave": "ifsw"})
+        self.assertEqual(parsed["current"]["timestamp_utc"], "2026-05-03T12:00:00+00:00")
 
 
 if __name__ == "__main__":

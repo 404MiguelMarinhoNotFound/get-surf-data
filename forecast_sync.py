@@ -138,10 +138,13 @@ def fetch_sources_for_spot(spot):
         if lat is None or lon is None:
             results["ibi"] = _source(error="No lat/lon configured for spot")
             return
+        if not copernicus_ibi.credentials_configured():
+            results["ibi"] = _source(error="Copernicus credentials missing")
+            return
         try:
             data = copernicus_ibi.fetch(lat, lon, offshore_bearing=spot.get("offshore_bearing"))
             if data is None:
-                results["ibi"] = _source(error="Copernicus credentials missing or no data returned")
+                results["ibi"] = _source(error="Copernicus no data returned")
             else:
                 results["ibi"] = _source(data)
         except Exception as e:
@@ -219,6 +222,7 @@ def build_payload(spot, sources, level=explainer.DEFAULT_LEVEL):
         data["om_analysis"] = None
         data["om_error"] = om.get("error") or "Open-Meteo fetch failed"
     om_hourly = om_data.get("hourly", []) if om_data else []
+    data["om_hourly"] = om_hourly
 
     surfline_source = sources.get("surfline", {})
     surfline_data = surfline_source.get("data")
@@ -274,6 +278,7 @@ def build_payload(spot, sources, level=explainer.DEFAULT_LEVEL):
         data["gfs_analysis"] = None
         data["gfs_error"] = gfs.get("error") or "NOAA GFS fetch failed"
     gfs_hourly = gfs_data.get("hourly", []) if gfs_data else []
+    data["gfs_hourly"] = gfs_hourly
 
     ibi = sources.get("ibi", {})
     ibi_data = ibi.get("data")

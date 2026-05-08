@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 import unittest
 import urllib.error
 
@@ -44,6 +46,30 @@ def _ibi_hour(ts):
 
 
 class ServerSourceIntegrationTests(unittest.TestCase):
+    def test_load_env_file_sets_missing_keys_without_overriding_existing(self):
+        original_missing = os.environ.pop("SURF_TEST_MISSING_ENV", None)
+        original_existing = os.environ.get("SURF_TEST_EXISTING_ENV")
+        os.environ["SURF_TEST_EXISTING_ENV"] = "runtime"
+        env_path = Path(__file__).parent / "tmp.env.local"
+        env_path.write_text(
+            "SURF_TEST_MISSING_ENV=from-file\n"
+            "SURF_TEST_EXISTING_ENV=from-file\n",
+            encoding="utf-8",
+        )
+        try:
+            server._load_env_file(env_path)
+            self.assertEqual(os.environ.get("SURF_TEST_MISSING_ENV"), "from-file")
+            self.assertEqual(os.environ.get("SURF_TEST_EXISTING_ENV"), "runtime")
+        finally:
+            env_path.unlink(missing_ok=True)
+            os.environ.pop("SURF_TEST_MISSING_ENV", None)
+            if original_missing is not None:
+                os.environ["SURF_TEST_MISSING_ENV"] = original_missing
+            if original_existing is None:
+                os.environ.pop("SURF_TEST_EXISTING_ENV", None)
+            else:
+                os.environ["SURF_TEST_EXISTING_ENV"] = original_existing
+
     def test_sync_spot_returns_surfline_and_windguru_source_scores(self):
         original = {
             "scraper": server.scraper.scrape,

@@ -3,6 +3,67 @@ import unittest
 import forecast_sync
 
 
+def _sf_payload():
+    return {
+        "url": "https://example.test/sf",
+        "fetched_at": "2026-05-08T06:00:00+00:00",
+        "now_utc": "2026-05-08T06:00:00+00:00",
+        "height_m": 1.0,
+        "period_s": 10,
+        "swell_direction": "W",
+        "wind_state": "offshore",
+        "wind_speed_kmh": 8,
+        "rating": 5,
+        "details": [],
+        "rating_timeline": [],
+        "tide": None,
+    }
+
+
+def _model_hour(ts):
+    return {
+        "timestamp_utc": ts,
+        "wave_height": 1.0,
+        "wave_period": 10,
+        "swell_height": 0.9,
+        "swell_period": 10,
+        "swell_direction": 260,
+        "wind_wave_height": 0.1,
+        "wind_speed_kmh": 8,
+        "wind_direction_deg": 20,
+    }
+
+
+class BuildPayloadHealthRowsTests(unittest.TestCase):
+    def test_build_payload_exposes_open_meteo_and_gfs_hourly_rows(self):
+        om_hourly = [_model_hour("2026-05-08T06:00:00+00:00")]
+        gfs_hourly = [_model_hour("2026-05-08T07:00:00+00:00")]
+        spot = {
+            "id": "carcavelos",
+            "name": "Carcavelos",
+            "url": "https://example.test/sf",
+            "lat": 38.68,
+            "lon": -9.34,
+            "offshore_bearing": 10,
+            "optimal_swell_bearing": 260,
+            "optimal_swell_label": "W",
+        }
+        sources = {
+            "sf": {"data": _sf_payload(), "error": None},
+            "om": {"data": {"current": om_hourly[0], "today_hours": om_hourly, "hourly": om_hourly}, "error": None},
+            "gfs": {"data": {"current": gfs_hourly[0], "today_hours": gfs_hourly, "hourly": gfs_hourly}, "error": None},
+            "ibi": {"data": None, "error": "disabled"},
+            "surfline": {"data": None, "error": "disabled"},
+            "windguru": {"data": None, "error": "disabled"},
+            "windguru_ecmwf": {"data": None, "error": "disabled"},
+        }
+
+        payload = forecast_sync.build_payload(spot, sources)
+
+        self.assertEqual(payload["om_hourly"], om_hourly)
+        self.assertEqual(payload["gfs_hourly"], gfs_hourly)
+
+
 class WindguruEcmwfValidationTests(unittest.TestCase):
     def _complete_row(self):
         return {
@@ -39,6 +100,70 @@ class WindguruEcmwfValidationTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "no complete ifs/ifsw"):
             forecast_sync._validate_windguru_ecmwf_payload({"hourly": [row]})
+
+
+class CopernicusDiagnosticsTests(unittest.TestCase):
+    def _spot(self):
+        return {
+            "id": "carcavelos",
+            "name": "Carcavelos",
+            "url": "https://example.test/sf",
+            "lat": 38.68,
+            "lon": -9.34,
+            "offshore_bearing": 10,
+            "surfline_spot_id": "abc",
+            "windguru_spot_id": "123",
+        }
+
+    def _with_fast_optional_sources(self):
+        originals = {
+            "scrape": forecast_sync.scraper.scrape,
+            "surfline": forecast_sync.surfline.fetch,
+            "windguru": forecast_sync.windguru.fetch,
+            "open_meteo": forecast_sync.open_meteo.fetch,
+            "noaa_gfs": forecast_sync.noaa_gfs.fetch,
+            "credentials": forecast_sync.copernicus_ibi.credentials_configured,
+            "ibi": forecast_sync.copernicus_ibi.fetch,
+        }
+        forecast_sync.scraper.scrape = lambda *_args, **_kwargs: _sf_payload()
+        forecast_sync.surfline.fetch = lambda *_args, **_kwargs: {"current": {}, "hourly": []}
+        forecast_sync.windguru.fetch = lambda *_args, **_kwargs: {"current": {}, "hourly": []}
+        forecast_sync.open_meteo.fetch = lambda *_args, **_kwargs: {"current": {}, "hourly": []}
+        forecast_sync.noaa_gfs.fetch = lambda *_args, **_kwargs: {"current": {}, "hourly": []}
+        return originals
+
+    def _restore(self, originals):
+        forecast_sync.scraper.scrape = originals["scrape"]
+        forecast_sync.surfline.fetch = originals["surfline"]
+        forecast_sync.windguru.fetch = originals["windguru"]
+        forecast_sync.open_meteo.fetch = originals["open_meteo"]
+        forecast_sync.noaa_gfs.fetch = originals["noaa_gfs"]
+        forecast_sync.copernicus_ibi.credentials_configured = originals["credentials"]
+        forecast_sync.copernicus_ibi.fetch = originals["ibi"]
+
+    def test_fetch_sources_reports_missing_copernicus_credentials(self):
+        originals = self._with_fast_optional_sources()
+        try:
+            forecast_sync.copernicus_ibi.credentials_configured = lambda: False
+            forecast_sync.copernicus_ibi.fetch = lambda *_args, **_kwargs: self.fail("fetch should not run")
+
+            sources = forecast_sync.fetch_sources_for_spot(self._spot())
+
+            self.assertEqual(sources["ibi"]["error"], "Copernicus credentials missing")
+        finally:
+            self._restore(originals)
+
+    def test_fetch_sources_reports_copernicus_no_data_separately(self):
+        originals = self._with_fast_optional_sources()
+        try:
+            forecast_sync.copernicus_ibi.credentials_configured = lambda: True
+            forecast_sync.copernicus_ibi.fetch = lambda *_args, **_kwargs: None
+
+            sources = forecast_sync.fetch_sources_for_spot(self._spot())
+
+            self.assertEqual(sources["ibi"]["error"], "Copernicus no data returned")
+        finally:
+            self._restore(originals)
 
 
 if __name__ == "__main__":

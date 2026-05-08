@@ -56,6 +56,10 @@ def _auth_header():
     return {"Authorization": f"Basic {token}"}
 
 
+def credentials_configured():
+    return bool(os.environ.get("COPERNICUS_USER") and os.environ.get("COPERNICUS_PASS"))
+
+
 def _round_to_hour(dt):
     return dt.replace(minute=0, second=0, microsecond=0)
 

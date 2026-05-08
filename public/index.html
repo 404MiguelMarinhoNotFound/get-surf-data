@@ -2274,7 +2274,7 @@ const SOURCE_HEALTH_DEFS = [
     analysisKey: null,
     hourlyKey: 'rating_timeline',
     errorKey: null,
-    required: ['height_m', 'period_s', 'swell_direction', 'wind']
+    required: ['height_m', 'period_s', 'swell_direction', 'wind_state']
   },
   {
     key: 'surfline',
@@ -2282,7 +2282,8 @@ const SOURCE_HEALTH_DEFS = [
     analysisKey: 'surfline_analysis',
     hourlyKey: 'surfline_hourly',
     errorKey: 'surfline_error',
-    required: ['wave_height', 'wave_period', 'swell_height', 'swell_period', 'swell_direction', 'wind_speed_kmh', 'wind_direction_deg']
+    required: ['wave_height', 'condition_rating', 'wind_speed_kmh', 'wind_direction_deg'],
+    preferAnalysisForHealth: true
   },
   {
     key: 'windguru',
@@ -2306,7 +2307,11 @@ const SOURCE_HEALTH_DEFS = [
     analysisKey: 'om_analysis',
     hourlyKey: 'om_hourly',
     errorKey: 'om_error',
-    required: ['wave_height', 'wave_period', 'swell_height', 'swell_period', 'swell_direction', 'wind_wave_height', 'wind_speed_kmh', 'wind_direction_deg']
+    required: ['wave_height', 'wave_period', 'swell_height', 'swell_period', 'swell_direction', 'wind_wave_height', 'wind_speed_kmh', 'wind_direction_deg'],
+    fieldAliases: {
+      wind_speed_kmh: ['wind_speed_kmh', 'wind_speed'],
+      wind_direction_deg: ['wind_direction_deg', 'wind_direction']
+    }
   },
   {
     key: 'gfs',
@@ -2314,7 +2319,11 @@ const SOURCE_HEALTH_DEFS = [
     analysisKey: 'gfs_analysis',
     hourlyKey: 'gfs_hourly',
     errorKey: 'gfs_error',
-    required: ['wave_height', 'wave_period', 'swell_height', 'swell_period', 'swell_direction', 'wind_wave_height', 'wind_speed_kmh', 'wind_direction_deg']
+    required: ['wave_height', 'wave_period', 'swell_height', 'swell_period', 'swell_direction', 'wind_wave_height', 'wind_speed_kmh', 'wind_direction_deg'],
+    fieldAliases: {
+      wind_speed_kmh: ['wind_speed_kmh', 'wind_speed'],
+      wind_direction_deg: ['wind_direction_deg', 'wind_direction']
+    }
   },
   {
     key: 'ibi',
@@ -2322,7 +2331,8 @@ const SOURCE_HEALTH_DEFS = [
     analysisKey: 'ibi_analysis',
     hourlyKey: 'ibi_hourly',
     errorKey: 'ibi_error',
-    required: ['wave_height', 'wave_period', 'swell_height', 'swell_period', 'swell_direction', 'wind_wave_height']
+    required: ['wave_height', 'wave_period', 'swell_height', 'swell_period', 'swell_direction', 'wind_wave_height'],
+    optionalCredentialError: true
   }
 ];
 
@@ -3094,9 +3104,27 @@ function sourceAnalysisFor(data, def) {
   return data || null;
 }
 
-function missingFields(row, required) {
+function hasFieldValue(row, key, aliases = {}) {
+  if (!row || typeof row !== 'object') return false;
+  const candidates = aliases[key] || [key];
+  return candidates.some(candidate =>
+    row[candidate] !== null && row[candidate] !== undefined && row[candidate] !== ''
+  );
+}
+
+function missingFields(row, required, aliases = {}) {
   if (!row || typeof row !== 'object') return required.slice();
-  return required.filter(key => row[key] === null || row[key] === undefined || row[key] === '');
+  return required.filter(key => !hasFieldValue(row, key, aliases));
+}
+
+function healthRowFor(data, def, analysis, hourly) {
+  if (def.key === 'sf') return data || null;
+  if (def.preferAnalysisForHealth && analysis) return analysis;
+  if (Array.isArray(hourly) && hourly.length) {
+    const complete = hourly.find(row => missingFields(row, def.required, def.fieldAliases).length === 0);
+    return complete || hourly[0];
+  }
+  return analysis || null;
 }
 
 function sourceHealth(data, def) {
@@ -3106,16 +3134,21 @@ function sourceHealth(data, def) {
   const analysis = sourceAnalysisFor(data, def);
   const hourly = def.hourlyKey ? (data[def.hourlyKey] || []) : [];
   const error = def.errorKey ? data[def.errorKey] : null;
-  const missing = missingFields(analysis, def.required);
+  const rowCount = Array.isArray(hourly) ? hourly.length : 0;
+  const healthRow = healthRowFor(data, def, analysis, hourly);
+  const missing = missingFields(healthRow, def.required, def.fieldAliases);
   const score = scores[def.key];
   const active = Array.isArray(unified.sources_used) && unified.sources_used.includes(def.key);
   let status = 'ok';
   let label = 'ok';
 
-  if (error) {
+  if (error && def.optionalCredentialError && /credentials missing/i.test(String(error))) {
+    status = 'warn';
+    label = 'disabled';
+  } else if (error) {
     status = 'error';
     label = 'error';
-  } else if (!analysis || score === null || score === undefined || missing.length) {
+  } else if (!healthRow || rowCount === 0 || score === null || score === undefined || missing.length) {
     status = 'warn';
     label = 'partial';
   }
@@ -3127,12 +3160,16 @@ function sourceHealth(data, def) {
     statusLabel: label,
     error,
     missing,
+    missing_fields: missing,
     score,
     active,
     weight: weights[def.key] || 0,
-    rowCount: Array.isArray(hourly) ? hourly.length : 0,
-    currentAt: sourceTimestamp(analysis),
+    rowCount,
+    row_count: rowCount,
+    currentAt: sourceTimestamp(healthRow),
+    current_at: sourceTimestamp(healthRow),
     horizonAt: latestTimestamp(hourly),
+    horizon_at: latestTimestamp(hourly),
     fetchedAt: analysis && (analysis.windguru_fetched_at || analysis.fetched_at || analysis.timestamp_utc)
   };
 }
@@ -3164,6 +3201,24 @@ function renderSourceHealthCard(item) {
   </div>`;
 }
 
+function staleHealthHints(report) {
+  if (!report || report.error || !report.data) return [];
+  const hints = [];
+  if (report.data.cache_stale) {
+    hints.push('Cached payload is stale; source health may reflect the last successful refresh rather than current upstream availability.');
+  }
+  const missingHourlyModels = report.items.filter(item =>
+    item.active
+    && item.row_count === 0
+    && ['om', 'gfs'].includes(item.key)
+    && !item.error
+  );
+  if (missingHourlyModels.length) {
+    hints.push('Hourly arrays missing for active model sources. Restart the local Python server, then force-refresh the sync endpoint before judging stale/source health.');
+  }
+  return hints;
+}
+
 function renderOpsReport(results, checkedAt) {
   const reports = results.map(({ spot, data, error }) => {
     const items = error ? [] : SOURCE_HEALTH_DEFS.map(def => sourceHealth(data, def));
@@ -3176,6 +3231,7 @@ function renderOpsReport(results, checkedAt) {
   const ecmwfItems = allItems.filter(item => item.key === 'windguru_ecmwf');
   const ecmwfOk = ecmwfItems.length && ecmwfItems.every(item => item.status === 'ok' && item.active);
   const ecmwfHorizon = latestTimestamp(ecmwfItems.map(item => ({ timestamp_utc: item.horizonAt })));
+  const hints = reports.flatMap(staleHealthHints);
 
   return `
     <div class="ops-summary">
@@ -3185,6 +3241,7 @@ function renderOpsReport(results, checkedAt) {
       <div class="ops-metric"><div class="ops-metric-label">ECMWF</div><div class="ops-metric-value">${ecmwfOk ? 'active' : 'check'}</div></div>
     </div>
     ${ecmwfHorizon ? `<div class="ops-empty">Windguru ECMWF latest horizon seen: <code>${escapeHtml(compactIso(ecmwfHorizon))}</code></div>` : ''}
+    ${hints.length ? `<div class="ops-empty">${hints.map(escapeHtml).join('<br>')}</div>` : ''}
     ${reports.map(report => {
       if (report.error) {
         return `<section class="ops-spot">

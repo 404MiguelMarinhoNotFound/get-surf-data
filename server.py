@@ -8,6 +8,7 @@ doesn't hammer the upstream site.
 """
 import json
 import mimetypes
+import os
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -28,6 +29,26 @@ import windguru
 import forecast_sync
 
 ROOT = Path(__file__).resolve().parent
+
+
+def _load_env_file(path):
+    if not path.exists():
+        return
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key or key in os.environ:
+            continue
+        value = value.strip().strip('"').strip("'")
+        os.environ[key] = value
+
+
+_load_env_file(ROOT / ".env.local")
+_load_env_file(ROOT / ".env.preview.local")
+
 SPOTS = json.loads((ROOT / "spots.json").read_text(encoding="utf-8"))
 
 CACHE = {}            # spot_id -> (epoch_seconds, payload)

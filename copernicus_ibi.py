@@ -17,6 +17,7 @@ import math
 import os
 import re
 import threading
+import time
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -178,8 +179,10 @@ def _fetch_layers_for_time(lat, lon, when_iso, headers):
         thread = threading.Thread(target=_fetch_layer, args=(layer, lat, lon, when_iso, headers, out, key))
         thread.start()
         threads.append(thread)
+    deadline = time.monotonic() + _TIMEOUT_S + 2
     for thread in threads:
-        thread.join(timeout=_TIMEOUT_S + 2)
+        remaining = max(0.0, deadline - time.monotonic())
+        thread.join(timeout=remaining)
     return out
 
 

@@ -105,6 +105,42 @@ class FetchSoftFailureTests(unittest.TestCase):
         self.assertIsNone(out["hourly"][0]["wind_speed"])
         self.assertEqual(len(calls), 3)
 
+    def test_layer_fetch_uses_one_shared_join_deadline(self):
+        original_layers = copernicus_ibi._LAYERS
+        original_thread = copernicus_ibi.threading.Thread
+        original_timeout = copernicus_ibi._TIMEOUT_S
+        original_monotonic = copernicus_ibi.time.monotonic
+        join_timeouts = []
+        clock = {"now": 100.0}
+
+        class FakeThread:
+            def __init__(self, target, args):
+                self.target = target
+                self.args = args
+
+            def start(self):
+                return None
+
+            def join(self, timeout=None):
+                join_timeouts.append(timeout)
+                clock["now"] += timeout or 0
+
+        try:
+            copernicus_ibi._LAYERS = {"a": "A", "b": "B", "c": "C"}
+            copernicus_ibi.threading.Thread = FakeThread
+            copernicus_ibi._TIMEOUT_S = 12
+            copernicus_ibi.time.monotonic = lambda: clock["now"]
+
+            copernicus_ibi._fetch_layers_for_time(38.7, -9.3, "2026-05-08T12:00:00Z", {})
+
+            self.assertEqual(len(join_timeouts), 3)
+            self.assertLessEqual(sum(join_timeouts), 14.5)
+        finally:
+            copernicus_ibi._LAYERS = original_layers
+            copernicus_ibi.threading.Thread = original_thread
+            copernicus_ibi._TIMEOUT_S = original_timeout
+            copernicus_ibi.time.monotonic = original_monotonic
+
 
 class ExplainerTests(unittest.TestCase):
     def test_interpret_all_handles_typical_payload(self):

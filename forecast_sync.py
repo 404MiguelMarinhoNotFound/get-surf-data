@@ -2,6 +2,7 @@
 
 import copy
 import json
+import os
 import threading
 import time
 from pathlib import Path
@@ -22,7 +23,7 @@ import windguru
 ROOT = Path(__file__).resolve().parent
 SPOTS = json.loads((ROOT / "spots.json").read_text(encoding="utf-8"))
 ALL_LEVELS = ("beginner", "improver", "intermediate", "advanced")
-SOURCE_FETCH_BUDGET_SECONDS = 35.0
+SOURCE_FETCH_BUDGET_SECONDS = 60.0
 _WINDGURU_ECMWF_REQUIRED_FIELDS = (
     "timestamp_utc",
     "wave_height",
@@ -62,6 +63,13 @@ def _validate_windguru_ecmwf_payload(payload):
     ):
         raise ValueError("Windguru ECMWF returned no complete ifs/ifsw scoring rows")
     return payload
+
+
+def _source_fetch_budget_seconds():
+    try:
+        return float(os.environ.get("SOURCE_FETCH_BUDGET_SECONDS", SOURCE_FETCH_BUDGET_SECONDS))
+    except (TypeError, ValueError):
+        return SOURCE_FETCH_BUDGET_SECONDS
 
 
 def fetch_sources_for_spot(spot):
@@ -170,14 +178,15 @@ def fetch_sources_for_spot(spot):
         ("ibi", fetch_ibi),
     ]
     threads = [(name, threading.Thread(target=target, daemon=True)) for name, target in workers]
-    deadline = time.monotonic() + SOURCE_FETCH_BUDGET_SECONDS
+    source_fetch_budget = _source_fetch_budget_seconds()
+    deadline = time.monotonic() + source_fetch_budget
     for _name, thread in threads:
         thread.start()
     for name, thread in threads:
         remaining = max(0.0, deadline - time.monotonic())
         thread.join(timeout=remaining)
         if thread.is_alive() and results[name].get("data") is None and not results[name].get("error"):
-            results[name] = _source(error=f"{name} fetch timed out after {SOURCE_FETCH_BUDGET_SECONDS:.0f}s")
+            results[name] = _source(error=f"{name} fetch timed out after {source_fetch_budget:.0f}s")
 
     return copy.deepcopy(results)
 

@@ -1,3 +1,4 @@
+import os
 import unittest
 
 import forecast_sync
@@ -133,6 +134,19 @@ class WindguruEcmwfValidationTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "no complete ifs/ifsw"):
             forecast_sync._validate_windguru_ecmwf_payload({"hourly": [row]})
+
+
+class SourceFetchBudgetTests(unittest.TestCase):
+    def test_source_fetch_budget_uses_env_override(self):
+        old_value = os.environ.get("SOURCE_FETCH_BUDGET_SECONDS")
+        os.environ["SOURCE_FETCH_BUDGET_SECONDS"] = "12.5"
+        try:
+            self.assertEqual(forecast_sync._source_fetch_budget_seconds(), 12.5)
+        finally:
+            if old_value is None:
+                os.environ.pop("SOURCE_FETCH_BUDGET_SECONDS", None)
+            else:
+                os.environ["SOURCE_FETCH_BUDGET_SECONDS"] = old_value
 
 
 class CopernicusDiagnosticsTests(unittest.TestCase):

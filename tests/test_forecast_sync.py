@@ -63,6 +63,39 @@ class BuildPayloadHealthRowsTests(unittest.TestCase):
         self.assertEqual(payload["om_hourly"], om_hourly)
         self.assertEqual(payload["gfs_hourly"], gfs_hourly)
 
+    def test_build_payload_preserves_model_rows_when_surf_forecast_fails(self):
+        om_hourly = [_model_hour("2026-05-08T06:00:00+00:00")]
+        gfs_hourly = [_model_hour("2026-05-08T07:00:00+00:00")]
+        spot = {
+            "id": "carcavelos",
+            "name": "Carcavelos",
+            "url": "https://example.test/sf",
+            "lat": 38.68,
+            "lon": -9.34,
+            "offshore_bearing": 10,
+            "optimal_swell_bearing": 260,
+            "optimal_swell_label": "W",
+        }
+        sources = {
+            "sf": {"data": None, "error": "sf fetch timed out after 35s"},
+            "om": {"data": {"current": om_hourly[0], "today_hours": om_hourly, "hourly": om_hourly}, "error": None},
+            "gfs": {"data": {"current": gfs_hourly[0], "today_hours": gfs_hourly, "hourly": gfs_hourly}, "error": None},
+            "ibi": {"data": None, "error": "Copernicus no data returned"},
+            "surfline": {"data": None, "error": "disabled"},
+            "windguru": {"data": None, "error": "disabled"},
+            "windguru_ecmwf": {"data": None, "error": "disabled"},
+        }
+
+        payload = forecast_sync.build_payload(spot, sources)
+
+        self.assertEqual(payload["error"], "Couldn't fetch forecast: sf fetch timed out after 35s")
+        self.assertEqual(payload["om_hourly"], om_hourly)
+        self.assertEqual(payload["gfs_hourly"], gfs_hourly)
+        self.assertIsNone(payload["om_error"])
+        self.assertIsNone(payload["gfs_error"])
+        self.assertIn("unified", payload)
+        self.assertIn("om", payload["unified"]["sources_used"])
+
 
 class WindguruEcmwfValidationTests(unittest.TestCase):
     def _complete_row(self):

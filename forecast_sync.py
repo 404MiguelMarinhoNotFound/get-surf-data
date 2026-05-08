@@ -188,17 +188,22 @@ def build_payload(spot, sources, level=explainer.DEFAULT_LEVEL):
 
     sf = sources.get("sf", {})
     if sf.get("error") or sf.get("data") is None:
-        return {
+        data = {
             "error": f"Couldn't fetch forecast: {sf.get('error')}",
             "spot_id": spot["id"],
             "spot_name": spot["name"],
             "url": spot["url"],
+            "rating_timeline": [],
+            "today_slots": [],
+            "details": [],
+            "sf_error": sf.get("error") or "Surf-Forecast fetch failed",
         }
-
-    data = copy.deepcopy(sf["data"])
-    data["spot_id"] = spot["id"]
-    data["spot_name"] = spot["name"]
-    data.update(explainer.verdict(data, level, spot))
+    else:
+        data = copy.deepcopy(sf["data"])
+        data["spot_id"] = spot["id"]
+        data["spot_name"] = spot["name"]
+        data["sf_error"] = None
+        data.update(explainer.verdict(data, level, spot))
 
     for slot in data.get("today_slots", []):
         slot_data = {"height_m": slot.get("height_m"), "period_s": slot.get("period_s")}

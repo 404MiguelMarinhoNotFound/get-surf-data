@@ -40,6 +40,19 @@ class OpsHealthStaticTests(unittest.TestCase):
         ):
             self.assertIn(required, self.html)
 
+    def test_localhost_disables_service_worker_shell_cache(self):
+        for required in (
+            "async function resetLocalServiceWorker",
+            "navigator.serviceWorker.getRegistrations",
+            "registration.unregister()",
+            "caches.keys()",
+            "caches.delete(key)",
+            "if (LOCAL_SERVER) {",
+            "resetLocalServiceWorker();",
+            "navigator.serviceWorker.register('/sw.js')",
+        ):
+            self.assertIn(required, self.html)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2273,7 +2273,7 @@ const SOURCE_HEALTH_DEFS = [
     label: 'Surf-Forecast',
     analysisKey: null,
     hourlyKey: 'rating_timeline',
-    errorKey: null,
+    errorKey: 'sf_error',
     required: ['height_m', 'period_s', 'swell_direction', 'wind_state']
   },
   {
@@ -4322,7 +4322,21 @@ syncAll();
   </div>
 </div>
 <script>
-  if ('serviceWorker' in navigator) {
+  async function resetLocalServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map(registration => registration.unregister()));
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(key => caches.delete(key)));
+      }
+    } catch (_) {}
+  }
+
+  if (LOCAL_SERVER) {
+    resetLocalServiceWorker();
+  } else if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js');
   }
 </script>

@@ -10,9 +10,9 @@
   "background_color": "#020617",
   "icons": [
     {
-      "src": "/getlineup.jpg",
+      "src": "/faviconlineup.png",
       "sizes": "1254x1254",
-      "type": "image/jpeg",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]

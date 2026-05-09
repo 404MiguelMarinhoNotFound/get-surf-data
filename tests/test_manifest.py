@@ -38,6 +38,17 @@ class ManifestTest(unittest.TestCase):
             len(short_name), 12, "short_name should be 12 chars or fewer for home screen display"
         )
 
+    def test_manifest_uses_lineup_favicon_png(self):
+        icons = self.manifest.get("icons", [])
+        self.assertTrue(
+            any(
+                icon.get("src") == "/faviconlineup.png"
+                and icon.get("type") == "image/png"
+                for icon in icons
+            ),
+            "Manifest should use faviconlineup.png as a PNG app icon",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

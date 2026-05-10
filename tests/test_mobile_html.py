@@ -31,13 +31,13 @@ class MobileHTMLTest(unittest.TestCase):
         )
         self.assertIn('href="/manifest.json"', self.html)
 
-    def test_favicon_uses_lineup_png(self):
+    def test_favicon_uses_lineup_svg(self):
         self.assertIn(
-            '<link rel="icon" type="image/png" href="/faviconlineup.png">',
+            '<link rel="icon" type="image/svg+xml" href="/favicon.svg">',
             self.html,
         )
         self.assertIn(
-            '<link rel="shortcut icon" type="image/png" href="/faviconlineup.png">',
+            '<link rel="shortcut icon" type="image/svg+xml" href="/favicon.svg">',
             self.html,
         )
 

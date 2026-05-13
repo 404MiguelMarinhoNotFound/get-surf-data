@@ -2653,7 +2653,7 @@ function renderForecastStrip(data) {
   const slots = data.today_slots;
   const timeline = data.rating_timeline;
   const bestWindow = data.best_window;
-  const nowMs = data.now_utc ? new Date(data.now_utc).getTime() : Date.now();
+  const nowMs = Date.now();
   if (!slots && !timeline) return '';
 
   let html = '<div class="forecast-strip"><h3>Forecast</h3>';
@@ -2782,7 +2782,7 @@ function renderHourPopover(cell, spotData) {
   const r = Math.min(10, Math.max(0, cell.rating));
   const tier = ratingTier(r);
   const cellMs = cell.timestamp_utc ? new Date(cell.timestamp_utc).getTime() : null;
-  const nowMs = spotData.now_utc ? new Date(spotData.now_utc).getTime() : Date.now();
+  const nowMs = Date.now();
   const rel = relativeWhen(cellMs, nowMs);
   const tideClass = cell.tide_state === 'rising' ? 'tide-rising'
                   : cell.tide_state === 'falling' ? 'tide-falling' : '';
@@ -2818,7 +2818,7 @@ function renderHourPopover(cell, spotData) {
 
 function renderDayPopover(group, spotData) {
   const cells = group.cells;
-  const nowMs = spotData.now_utc ? new Date(spotData.now_utc).getTime() : Date.now();
+  const nowMs = Date.now();
   const ratings = cells.map(c => c.rating);
   const minR = Math.min(...ratings), maxR = Math.max(...ratings);
 
@@ -3856,11 +3856,57 @@ function renderPredictorRibbon(windows, selectedIndex = 0, technicalExpanded = f
   <div class="hero-technical-slot">${renderWindowTechnicalDetail(selectedWin, technicalExpanded)}</div>`;
 }
 
+// Derive live tier/headline/currentWindowEnds from predictor_windows at Date.now().
+// Returns null when outside daylight hours (no current block), so the caller falls
+// back to the cached unified.tier which reflects the last scored daylight slot.
+function liveHeroTierState(u) {
+  const now = Date.now();
+  const predictorWindows = Array.isArray(u.predictor_windows) ? u.predictor_windows : [];
+
+  const currBlock = predictorWindows.find(w => {
+    if (!w || !w.starts_at || !w.ends_at) return false;
+    return new Date(w.starts_at).getTime() <= now && now < new Date(w.ends_at).getTime();
+  });
+  if (!currBlock) return null;
+
+  // Map predictor tier (gold/green/surfable/meh/low) to unified hero tier
+  const predTier = predictorTier(currBlock.score);
+  const tier = predTier === 'gold' ? 'gold'
+             : predTier === 'green' ? 'green'
+             : predTier === 'surfable' ? 'yellow'
+             : 'red';
+
+  const headline = tier === 'gold' ? 'GOLD WINDOW - GO NOW'
+                 : tier === 'green' ? 'GO NOW'
+                 : tier === 'yellow' ? 'WAIT FOR A BETTER WINDOW'
+                 : 'SKIP NOW';
+
+  // Walk forward through consecutive green/gold blocks to find when the good run ends
+  let currentWindowEnds = null;
+  if (tier === 'gold' || tier === 'green') {
+    let endMs = new Date(currBlock.ends_at).getTime();
+    currentWindowEnds = currBlock.ends_at;
+    for (const w of predictorWindows) {
+      if (!w.starts_at || !w.ends_at) continue;
+      if (Math.abs(new Date(w.starts_at).getTime() - endMs) > 60000) continue;
+      const wTier = predictorTier(w.score);
+      if (wTier !== 'gold' && wTier !== 'green') break;
+      endMs = new Date(w.ends_at).getTime();
+      currentWindowEnds = w.ends_at;
+    }
+  }
+
+  return { tier, headline, currentWindowEnds };
+}
+
 function renderUnifiedHero(data) {
   const u = data.unified;
   if (!u) return '';
 
-  const tier = ['gold', 'green', 'yellow', 'red'].includes(u.tier) ? u.tier : 'yellow';
+  // Use live tier from the predictor block covering Date.now(); fall back to cached
+  // tier (computed at refresh time) only when outside daylight hours.
+  const live = liveHeroTierState(u);
+  const tier = live ? live.tier : (['gold', 'green', 'yellow', 'red'].includes(u.tier) ? u.tier : 'yellow');
   const badge = {
     gold: 'GOLD',
     green: 'GO',
@@ -3875,8 +3921,9 @@ function renderUnifiedHero(data) {
           : (u.next_gold_window ? [u.next_gold_window] : [])));
 
   let currentWindowText = '';
-  if (u.current_window_ends && u.decision === 'go') {
-    const end = hhmmFromIso(u.current_window_ends);
+  const activeWindowEnds = live ? live.currentWindowEnds : u.current_window_ends;
+  if (activeWindowEnds && (tier === 'gold' || tier === 'green')) {
+    const end = hhmmFromIso(activeWindowEnds);
     currentWindowText = end ? `Going until ${end}` : 'Going now 🌊';
   }
 
@@ -3916,7 +3963,7 @@ function renderUnifiedHero(data) {
   const heroState = JSON.stringify({ windows: topWindows, predictorWindows, currentWindowText });
   return `<div class="hero-card tier-${escapeHtml(tier)}" data-hero-state="${escapeHtml(heroState)}" data-hero-index="0" data-predictor-index="${escapeHtml(String(initialPredictorIndex))}" data-predictor-day-index="${escapeHtml(String(initialDayIndex))}" data-selected-window-start="${escapeHtml(selectedStart)}" data-technical-expanded="0">
     <div class="hero-tier-badge">${escapeHtml(badge)}</div>
-    <div class="hero-headline">${escapeHtml(u.decision_headline || 'HOLD OFF FOR NOW')}</div>
+    <div class="hero-headline">${escapeHtml(live ? live.headline : (u.decision_headline || 'HOLD OFF FOR NOW'))}</div>
     <div class="hero-summary">${escapeHtml(u.plain_summary || '')}</div>
     ${reasonHtml}
     <div class="hero-window-slot">${windowHtml}</div>

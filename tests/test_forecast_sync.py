@@ -137,6 +137,15 @@ class WindguruEcmwfValidationTests(unittest.TestCase):
 
 
 class SourceFetchBudgetTests(unittest.TestCase):
+    def test_default_source_fetch_budget_leaves_time_for_cache_writes(self):
+        old_value = os.environ.get("SOURCE_FETCH_BUDGET_SECONDS")
+        os.environ.pop("SOURCE_FETCH_BUDGET_SECONDS", None)
+        try:
+            self.assertLess(forecast_sync._source_fetch_budget_seconds(), 60.0)
+        finally:
+            if old_value is not None:
+                os.environ["SOURCE_FETCH_BUDGET_SECONDS"] = old_value
+
     def test_source_fetch_budget_uses_env_override(self):
         old_value = os.environ.get("SOURCE_FETCH_BUDGET_SECONDS")
         os.environ["SOURCE_FETCH_BUDGET_SECONDS"] = "12.5"

@@ -2335,6 +2335,7 @@ const SOURCE_HEALTH_DEFS = [
     optionalCredentialError: true
   }
 ];
+const SOURCE_CURRENT_STALE_HOURS = 30;
 
 // Inline SVG icons (Lucide-style, 24x24 viewBox, currentColor stroke)
 const ICON_DROPLET = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5s5.5 6 5.5 11a5.5 5.5 0 1 1-11 0c0-5 5.5-11 5.5-11Z"/></svg>`;
@@ -3099,6 +3100,15 @@ function compactIso(value) {
   return dt.toISOString().replace(':00.000Z', 'Z');
 }
 
+function isStaleSourceCurrent(value, checkedAt = Date.now()) {
+  if (!value) return false;
+  const currentMs = new Date(value).getTime();
+  const checkedMs = checkedAt instanceof Date ? checkedAt.getTime() : Number(checkedAt);
+  if (Number.isNaN(currentMs) || Number.isNaN(checkedMs)) return false;
+  const ageHours = (checkedMs - currentMs) / (60 * 60 * 1000);
+  return ageHours > SOURCE_CURRENT_STALE_HOURS;
+}
+
 function sourceAnalysisFor(data, def) {
   if (def.analysisKey) return data[def.analysisKey] || null;
   return data || null;
@@ -3139,6 +3149,8 @@ function sourceHealth(data, def) {
   const missing = missingFields(healthRow, def.required, def.fieldAliases);
   const score = scores[def.key];
   const active = Array.isArray(unified.sources_used) && unified.sources_used.includes(def.key);
+  const currentAt = sourceTimestamp(healthRow);
+  const currentStale = isStaleSourceCurrent(currentAt);
   let status = 'ok';
   let label = 'ok';
 
@@ -3151,6 +3163,9 @@ function sourceHealth(data, def) {
   } else if (!healthRow || rowCount === 0 || score === null || score === undefined || missing.length) {
     status = 'warn';
     label = 'partial';
+  } else if (currentStale) {
+    status = 'warn';
+    label = 'stale';
   }
 
   return {
@@ -3166,8 +3181,10 @@ function sourceHealth(data, def) {
     weight: weights[def.key] || 0,
     rowCount,
     row_count: rowCount,
-    currentAt: sourceTimestamp(healthRow),
-    current_at: sourceTimestamp(healthRow),
+    currentAt,
+    current_at: currentAt,
+    currentStale,
+    current_stale: currentStale,
     horizonAt: latestTimestamp(hourly),
     horizon_at: latestTimestamp(hourly),
     fetchedAt: analysis && (analysis.windguru_fetched_at || analysis.fetched_at || analysis.timestamp_utc)
@@ -3206,6 +3223,9 @@ function staleHealthHints(report) {
   const hints = [];
   if (report.data.cache_stale) {
     hints.push('Cached payload is stale; source health may reflect the last successful refresh rather than current upstream availability.');
+  }
+  if (report.items.some(item => item.currentStale)) {
+    hints.push('Source current timestamps are stale; rows and horizons may be from an old cache snapshot even when required fields are present.');
   }
   const missingHourlyModels = report.items.filter(item =>
     item.active

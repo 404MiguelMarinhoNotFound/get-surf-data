@@ -13,7 +13,7 @@ class OpsHealthStaticTests(unittest.TestCase):
     def test_ops_health_normalizes_diagnostic_field_names(self):
         for required in (
             "row_count: rowCount",
-            "current_at: sourceTimestamp(healthRow)",
+            "current_at: currentAt",
             "horizon_at: latestTimestamp(hourly)",
             "missing_fields: missing",
             "status",
@@ -28,6 +28,16 @@ class OpsHealthStaticTests(unittest.TestCase):
             "Hourly arrays missing for active model sources",
             "Restart the local Python server",
             "stale/source health",
+        ):
+            self.assertIn(required, self.html)
+
+    def test_ops_health_warns_on_stale_source_current_timestamps(self):
+        for required in (
+            "SOURCE_CURRENT_STALE_HOURS",
+            "function isStaleSourceCurrent",
+            "currentStale",
+            "label = 'stale'",
+            "Source current timestamps are stale",
         ):
             self.assertIn(required, self.html)
 

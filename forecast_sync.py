@@ -23,7 +23,7 @@ import windguru
 ROOT = Path(__file__).resolve().parent
 SPOTS = json.loads((ROOT / "spots.json").read_text(encoding="utf-8"))
 ALL_LEVELS = ("beginner", "improver", "intermediate", "advanced")
-SOURCE_FETCH_BUDGET_SECONDS = 60.0
+SOURCE_FETCH_BUDGET_SECONDS = 40.0
 _WINDGURU_ECMWF_REQUIRED_FIELDS = (
     "timestamp_utc",
     "wave_height",

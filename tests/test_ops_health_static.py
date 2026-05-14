@@ -25,6 +25,9 @@ class OpsHealthStaticTests(unittest.TestCase):
         for required in (
             "function staleHealthHints",
             "cache_stale",
+            "refresh_status",
+            "refresh_last_error",
+            "Last refresh",
             "Hourly arrays missing for active model sources",
             "Restart the local Python server",
             "stale/source health",

@@ -11,6 +11,39 @@ import db
 import forecast_cache
 
 
+def _header_value(headers, name):
+    if headers is None:
+        return None
+    value = headers.get(name)
+    if value is not None:
+        return value
+    return headers.get(name.lower())
+
+
+def refresh_auth_result(headers):
+    db.load_local_env()
+    cron_secret = (os.environ.get("CRON_SECRET") or "").strip()
+    if not cron_secret:
+        return (
+            False,
+            {
+                "error": "refresh auth is not configured",
+                "code": "refresh_auth_not_configured",
+            },
+            503,
+        )
+    if _header_value(headers, "Authorization") != f"Bearer {cron_secret}":
+        return (
+            False,
+            {
+                "error": "unauthorized",
+                "code": "refresh_auth_invalid",
+            },
+            401,
+        )
+    return True, None, 200
+
+
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self._handle_refresh(force=False)
@@ -20,16 +53,10 @@ class handler(BaseHTTPRequestHandler):
         force = qs.get("force", ["0"])[0].lower() in ("1", "true", "yes")
         self._handle_refresh(force=force)
 
-    def _authorized(self):
-        db.load_local_env()
-        cron_secret = os.environ.get("CRON_SECRET")
-        if not cron_secret:
-            return False
-        return self.headers.get("Authorization") == f"Bearer {cron_secret}"
-
     def _handle_refresh(self, force=False):
-        if not self._authorized():
-            self._send_json({"error": "unauthorized"}, status=401)
+        allowed, payload, status = refresh_auth_result(self.headers)
+        if not allowed:
+            self._send_json(payload, status=status)
             return
 
         try:

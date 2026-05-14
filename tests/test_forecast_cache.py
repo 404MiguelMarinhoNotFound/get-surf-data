@@ -36,6 +36,32 @@ class ForecastCacheTimeTests(unittest.TestCase):
         self.assertFalse(is_stale(now_utc, {"last_success_slot_local": current_slot}))
         self.assertTrue(is_stale(now_utc, {}))
 
+    def test_refreshing_state_is_abandoned_after_timeout_window(self):
+        from datetime import timedelta
+        from forecast_cache import refresh_is_abandoned
+
+        now_utc = datetime(2026, 5, 7, 12, 20, tzinfo=timezone.utc)
+
+        self.assertTrue(
+            refresh_is_abandoned(
+                {
+                    "status": "refreshing",
+                    "last_started_at": now_utc - timedelta(minutes=11),
+                },
+                now_utc,
+            )
+        )
+        self.assertFalse(
+            refresh_is_abandoned(
+                {
+                    "status": "refreshing",
+                    "last_started_at": now_utc - timedelta(minutes=2),
+                },
+                now_utc,
+            )
+        )
+        self.assertFalse(refresh_is_abandoned({"status": "success"}, now_utc))
+
 
 class ForecastCacheMappingTests(unittest.TestCase):
     def test_hourly_row_mapping_accepts_source_variants(self):
@@ -98,6 +124,181 @@ class ForecastCacheMappingTests(unittest.TestCase):
         self.assertEqual(rows[0]["wave_height"], 1.2)
 
 
+class ForecastCacheWriteTests(unittest.TestCase):
+    def test_replace_source_rows_streams_copy_inserts(self):
+        import forecast_cache
+
+        class FakeCopy:
+            def __init__(self):
+                self.rows = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def write_row(self, row):
+                self.rows.append(row)
+
+        class FakeCursor:
+            def __init__(self):
+                self.executes = []
+                self.copy_calls = []
+
+            def execute(self, sql, params=None):
+                self.executes.append((sql, params))
+
+            def copy(self, sql):
+                copy = FakeCopy()
+                self.copy_calls.append((sql, copy))
+                return copy
+
+        original_rows = forecast_cache._source_hourly_rows
+        original_jsonb = forecast_cache.db.jsonb
+        forecast_cache._source_hourly_rows = lambda *_args, **_kwargs: [
+            {
+                "spot_id": "carcavelos",
+                "source": "om",
+                "raw": {"n": 1},
+                "timestamp_utc": "2026-05-07T09:00:00+00:00",
+            },
+            {
+                "spot_id": "carcavelos",
+                "source": "om",
+                "raw": {"n": 2},
+                "timestamp_utc": "2026-05-07T10:00:00+00:00",
+            },
+        ]
+        forecast_cache.db.jsonb = lambda value: value
+        try:
+            cur = FakeCursor()
+            forecast_cache._replace_source_rows(cur, "carcavelos", "run-1", {}, {})
+        finally:
+            forecast_cache._source_hourly_rows = original_rows
+            forecast_cache.db.jsonb = original_jsonb
+
+        self.assertEqual(len(cur.executes), 1)
+        self.assertEqual(len(cur.copy_calls), 1)
+        self.assertEqual(len(cur.copy_calls[0][1].rows), 2)
+
+    def test_replace_window_rows_streams_copy_inserts(self):
+        import forecast_cache
+
+        class FakeCopy:
+            def __init__(self):
+                self.rows = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def write_row(self, row):
+                self.rows.append(row)
+
+        class FakeCursor:
+            def __init__(self):
+                self.executes = []
+                self.copy_calls = []
+
+            def execute(self, sql, params=None):
+                self.executes.append((sql, params))
+
+            def copy(self, sql):
+                copy = FakeCopy()
+                self.copy_calls.append((sql, copy))
+                return copy
+
+        original_rows = forecast_cache._window_rows
+        original_jsonb = forecast_cache.db.jsonb
+        forecast_cache._window_rows = lambda *_args, **_kwargs: [
+            {
+                "spot_id": "carcavelos",
+                "level": "improver",
+                "window_type": "top_windows",
+                "payload": {"rank": 1},
+                "rank": 1,
+            },
+            {
+                "spot_id": "carcavelos",
+                "level": "improver",
+                "window_type": "top_windows",
+                "payload": {"rank": 2},
+                "rank": 2,
+            },
+        ]
+        forecast_cache.db.jsonb = lambda value: value
+        try:
+            cur = FakeCursor()
+            forecast_cache._replace_window_rows(cur, "carcavelos", "improver", "run-1", {})
+        finally:
+            forecast_cache._window_rows = original_rows
+            forecast_cache.db.jsonb = original_jsonb
+
+        self.assertEqual(len(cur.executes), 1)
+        self.assertEqual(len(cur.copy_calls), 1)
+        self.assertEqual(len(cur.copy_calls[0][1].rows), 2)
+
+    def test_replace_source_snapshots_streams_copy_inserts(self):
+        import forecast_cache
+
+        class FakeCopy:
+            def __init__(self):
+                self.rows = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def write_row(self, row):
+                self.rows.append(row)
+
+        class FakeCursor:
+            def __init__(self):
+                self.executes = []
+                self.copy_calls = []
+
+            def execute(self, sql, params=None):
+                self.executes.append((sql, params))
+
+            def copy(self, sql):
+                copy = FakeCopy()
+                self.copy_calls.append((sql, copy))
+                return copy
+
+        original_rows = forecast_cache._source_snapshot_rows
+        original_jsonb = forecast_cache.db.jsonb
+        forecast_cache._source_snapshot_rows = lambda *_args, **_kwargs: [
+            {
+                "spot_id": "carcavelos",
+                "source": "om",
+                "current_payload": {"ok": True},
+                "analysis_payload": {"score": 1},
+            },
+            {
+                "spot_id": "carcavelos",
+                "source": "gfs",
+                "current_payload": {"ok": True},
+                "analysis_payload": {"score": 2},
+            },
+        ]
+        forecast_cache.db.jsonb = lambda value: value
+        try:
+            cur = FakeCursor()
+            forecast_cache._replace_source_snapshots(cur, "carcavelos", "run-1", {}, {})
+        finally:
+            forecast_cache._source_snapshot_rows = original_rows
+            forecast_cache.db.jsonb = original_jsonb
+
+        self.assertEqual(len(cur.executes), 1)
+        self.assertEqual(len(cur.copy_calls), 1)
+        self.assertEqual(len(cur.copy_calls[0][1].rows), 2)
+
+
 class ForecastCacheReadTests(unittest.TestCase):
     def test_empty_snapshot_error_shape_is_explicit(self):
         from forecast_cache import empty_cache_payload
@@ -107,6 +308,96 @@ class ForecastCacheReadTests(unittest.TestCase):
         self.assertIn("scripts/db_backfill.py", payload["error"])
         self.assertEqual(payload["spot_id"], "carcavelos")
         self.assertEqual(payload["level"], "improver")
+
+    def test_refresh_diagnostics_expose_safe_state_without_traceback(self):
+        from forecast_cache import refresh_diagnostics
+
+        now_utc = datetime(2026, 5, 7, 13, 5, tzinfo=timezone.utc)
+        state = {
+            "status": "failed",
+            "last_success_at": datetime(2026, 5, 7, 0, 10, tzinfo=timezone.utc),
+            "last_success_slot_local": datetime(2026, 5, 6, 23, 0, tzinfo=timezone.utc),
+            "last_started_at": datetime(2026, 5, 7, 12, 0, tzinfo=timezone.utc),
+            "last_error": {
+                "type": "RuntimeError",
+                "message": "surfline fetch timed out",
+                "traceback": "secret internals",
+            },
+        }
+
+        diagnostics = refresh_diagnostics(state, now_utc)
+
+        self.assertEqual(diagnostics["refresh_status"], "failed")
+        self.assertTrue(diagnostics["refresh_stale"])
+        self.assertEqual(
+            diagnostics["refresh_last_success_at"],
+            "2026-05-07T00:10:00+00:00",
+        )
+        self.assertEqual(
+            diagnostics["refresh_last_success_slot_local"],
+            "2026-05-07T00:00:00+01:00",
+        )
+        self.assertEqual(
+            diagnostics["refresh_last_started_at"],
+            "2026-05-07T12:00:00+00:00",
+        )
+        self.assertEqual(
+            diagnostics["refresh_last_error"],
+            {"type": "RuntimeError", "message": "surfline fetch timed out"},
+        )
+
+    def test_read_cached_payload_includes_refresh_diagnostics(self):
+        import forecast_cache
+
+        class FakeCursor:
+            def execute(self, *_args, **_kwargs):
+                return None
+
+            def fetchone(self):
+                return {
+                    "payload": {"spot_id": "carcavelos", "unified": {}},
+                    "updated_at": datetime(2026, 5, 7, 12, 20, tzinfo=timezone.utc),
+                }
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        class FakeConn:
+            def cursor(self):
+                return FakeCursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        original_connect = forecast_cache.db.connect
+        original_state = forecast_cache.get_refresh_state
+        forecast_cache.db.connect = lambda: FakeConn()
+        forecast_cache.get_refresh_state = lambda _conn: {
+            "status": "success",
+            "last_success_at": datetime(2026, 5, 7, 12, 10, tzinfo=timezone.utc),
+            "last_success_slot_local": datetime(2026, 5, 7, 11, 0, tzinfo=timezone.utc),
+            "last_started_at": datetime(2026, 5, 7, 12, 0, tzinfo=timezone.utc),
+            "last_error": None,
+        }
+        try:
+            payload = forecast_cache.read_cached_payload("carcavelos", "improver")
+        finally:
+            forecast_cache.db.connect = original_connect
+            forecast_cache.get_refresh_state = original_state
+
+        self.assertEqual(payload["refresh_status"], "success")
+        self.assertIn("refresh_last_success_at", payload)
+        self.assertIn("refresh_last_success_slot_local", payload)
+        self.assertIn("refresh_last_started_at", payload)
+        self.assertIn("refresh_stale", payload)
+        self.assertEqual(payload["cache_status"], payload["refresh_status"])
+        self.assertEqual(payload["cache_stale"], payload["refresh_stale"])
 
     def test_sanitizes_legacy_missing_tide_window_payload(self):
         from forecast_cache import sanitize_cached_payload

@@ -23,7 +23,17 @@ import windguru
 ROOT = Path(__file__).resolve().parent
 SPOTS = json.loads((ROOT / "spots.json").read_text(encoding="utf-8"))
 ALL_LEVELS = ("beginner", "improver", "intermediate", "advanced")
-SOURCE_FETCH_BUDGET_SECONDS = 40.0
+SOURCE_FETCH_BUDGET_SECONDS = 25.0
+SOURCE_FETCH_POLL_SECONDS = 0.05
+DEFAULT_SOURCE_TIMEOUT_SECONDS = {
+    "sf": 25.0,
+    "surfline": 12.0,
+    "windguru": 18.0,
+    "windguru_ecmwf": 18.0,
+    "om": 12.0,
+    "gfs": 12.0,
+    "ibi": 8.0,
+}
 _WINDGURU_ECMWF_REQUIRED_FIELDS = (
     "timestamp_utc",
     "wave_height",
@@ -72,6 +82,22 @@ def _source_fetch_budget_seconds():
         return SOURCE_FETCH_BUDGET_SECONDS
 
 
+def _source_timeout_seconds(source_name):
+    env_name = f"SOURCE_FETCH_TIMEOUT_{source_name.upper()}_SECONDS"
+    fallback = DEFAULT_SOURCE_TIMEOUT_SECONDS.get(source_name, SOURCE_FETCH_BUDGET_SECONDS)
+    try:
+        source_timeout = float(os.environ.get(env_name, fallback))
+    except (TypeError, ValueError):
+        source_timeout = fallback
+    return max(0.0, min(source_timeout, _source_fetch_budget_seconds()))
+
+
+def _format_seconds(seconds):
+    if seconds >= 1:
+        return f"{seconds:.0f}"
+    return f"{seconds:.2f}".rstrip("0").rstrip(".")
+
+
 def fetch_sources_for_spot(spot):
     """Fetch all upstream sources once for a spot.
 
@@ -88,37 +114,46 @@ def fetch_sources_for_spot(spot):
         "windguru": _source(),
         "windguru_ecmwf": _source(),
     }
+    lock = threading.Lock()
+
+    def set_result(name, source):
+        with lock:
+            results[name] = source
+
+    def current_result(name):
+        with lock:
+            return copy.deepcopy(results[name])
 
     def fetch_sf():
         try:
-            results["sf"] = _source(scraper.scrape(spot["url"], tz_name=spot.get("tz")))
+            set_result("sf", _source(scraper.scrape(spot["url"], tz_name=spot.get("tz"))))
         except Exception as e:
-            results["sf"] = _source(error=str(e))
+            set_result("sf", _source(error=str(e)))
 
     def fetch_surfline():
         sl_id = spot.get("surfline_spot_id")
         if not sl_id:
-            results["surfline"] = _source(error="No Surfline spot id configured")
+            set_result("surfline", _source(error="No Surfline spot id configured"))
             return
         try:
-            results["surfline"] = _source(surfline.fetch(sl_id, source_url=spot.get("surfline_url")))
+            set_result("surfline", _source(surfline.fetch(sl_id, source_url=spot.get("surfline_url"))))
         except Exception as e:
-            results["surfline"] = _source(error=str(e))
+            set_result("surfline", _source(error=str(e)))
 
     def fetch_windguru():
         wg_id = spot.get("windguru_spot_id")
         if not wg_id:
-            results["windguru"] = _source(error="No Windguru spot id configured")
+            set_result("windguru", _source(error="No Windguru spot id configured"))
             return
         try:
-            results["windguru"] = _source(windguru.fetch(wg_id))
+            set_result("windguru", _source(windguru.fetch(wg_id)))
         except Exception as e:
-            results["windguru"] = _source(error=str(e))
+            set_result("windguru", _source(error=str(e)))
 
     def fetch_windguru_ecmwf():
         wg_id = spot.get("windguru_spot_id")
         if not wg_id:
-            results["windguru_ecmwf"] = _source(error="No Windguru spot id configured")
+            set_result("windguru_ecmwf", _source(error="No Windguru spot id configured"))
             return
         try:
             payload = windguru.fetch(
@@ -127,46 +162,46 @@ def fetch_sources_for_spot(spot):
                 wave_model="ifsw",
                 source_name="windguru_ecmwf",
             )
-            results["windguru_ecmwf"] = _source(_validate_windguru_ecmwf_payload(payload))
+            set_result("windguru_ecmwf", _source(_validate_windguru_ecmwf_payload(payload)))
         except Exception as e:
-            results["windguru_ecmwf"] = _source(error=f"Windguru ECMWF fetch failed: {e}")
+            set_result("windguru_ecmwf", _source(error=f"Windguru ECMWF fetch failed: {e}"))
 
     def fetch_om():
         lat, lon = spot.get("lat"), spot.get("lon")
         if lat is None or lon is None:
-            results["om"] = _source(error="No lat/lon configured for spot")
+            set_result("om", _source(error="No lat/lon configured for spot"))
             return
         try:
-            results["om"] = _source(open_meteo.fetch(lat, lon))
+            set_result("om", _source(open_meteo.fetch(lat, lon)))
         except Exception as e:
-            results["om"] = _source(error=str(e))
+            set_result("om", _source(error=str(e)))
 
     def fetch_ibi():
         lat, lon = spot.get("lat"), spot.get("lon")
         if lat is None or lon is None:
-            results["ibi"] = _source(error="No lat/lon configured for spot")
+            set_result("ibi", _source(error="No lat/lon configured for spot"))
             return
         if not copernicus_ibi.credentials_configured():
-            results["ibi"] = _source(error="Copernicus credentials missing")
+            set_result("ibi", _source(error="Copernicus credentials missing"))
             return
         try:
             data = copernicus_ibi.fetch(lat, lon, offshore_bearing=spot.get("offshore_bearing"))
             if data is None:
-                results["ibi"] = _source(error="Copernicus no data returned")
+                set_result("ibi", _source(error="Copernicus no data returned"))
             else:
-                results["ibi"] = _source(data)
+                set_result("ibi", _source(data))
         except Exception as e:
-            results["ibi"] = _source(error=str(e))
+            set_result("ibi", _source(error=str(e)))
 
     def fetch_gfs():
         lat, lon = spot.get("lat"), spot.get("lon")
         if lat is None or lon is None:
-            results["gfs"] = _source(error="No lat/lon configured for spot")
+            set_result("gfs", _source(error="No lat/lon configured for spot"))
             return
         try:
-            results["gfs"] = _source(noaa_gfs.fetch(lat, lon))
+            set_result("gfs", _source(noaa_gfs.fetch(lat, lon)))
         except Exception as e:
-            results["gfs"] = _source(error=str(e))
+            set_result("gfs", _source(error=str(e)))
 
     workers = [
         ("sf", fetch_sf),
@@ -177,18 +212,39 @@ def fetch_sources_for_spot(spot):
         ("gfs", fetch_gfs),
         ("ibi", fetch_ibi),
     ]
-    threads = [(name, threading.Thread(target=target, daemon=True)) for name, target in workers]
-    source_fetch_budget = _source_fetch_budget_seconds()
-    deadline = time.monotonic() + source_fetch_budget
-    for _name, thread in threads:
+    threads = {name: threading.Thread(target=target, daemon=True) for name, target in workers}
+    started_at = time.monotonic()
+    deadlines = {name: started_at + _source_timeout_seconds(name) for name, _target in workers}
+    pending = set(threads)
+    for thread in threads.values():
         thread.start()
-    for name, thread in threads:
-        remaining = max(0.0, deadline - time.monotonic())
-        thread.join(timeout=remaining)
-        if thread.is_alive() and results[name].get("data") is None and not results[name].get("error"):
-            results[name] = _source(error=f"{name} fetch timed out after {source_fetch_budget:.0f}s")
 
-    return copy.deepcopy(results)
+    while pending:
+        now = time.monotonic()
+        for name in list(pending):
+            thread = threads[name]
+            if not thread.is_alive():
+                thread.join(timeout=0)
+                pending.remove(name)
+                continue
+            if now >= deadlines[name]:
+                result = current_result(name)
+                if result.get("data") is None and not result.get("error"):
+                    timeout_seconds = _source_timeout_seconds(name)
+                    set_result(
+                        name,
+                        _source(error=f"{name} fetch timed out after {_format_seconds(timeout_seconds)}s"),
+                    )
+                pending.remove(name)
+
+        if pending:
+            next_deadline = min(deadlines[name] for name in pending)
+            sleep_for = min(SOURCE_FETCH_POLL_SECONDS, max(0.0, next_deadline - time.monotonic()))
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+
+    with lock:
+        return copy.deepcopy(results)
 
 
 def build_payload(spot, sources, level=explainer.DEFAULT_LEVEL):

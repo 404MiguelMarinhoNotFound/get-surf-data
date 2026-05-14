@@ -24,6 +24,7 @@ except ZoneInfoNotFoundError:
 CACHE_KEY = "global"
 PAYLOAD_VERSION = 2
 ADVISORY_LOCK_ID = 2026050701
+REFRESH_ABANDONED_AFTER = timedelta(minutes=10)
 
 
 def utc_now():
@@ -57,6 +58,62 @@ def is_stale(now_utc, state):
     due_slot = latest_lisbon_slot(now_utc)
     last_slot = (state or {}).get("last_success_slot_local")
     return last_slot is None or last_slot < due_slot
+
+
+def _as_datetime(value):
+    if value is None or hasattr(value, "astimezone"):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return None
+
+
+def refresh_is_abandoned(state, now_utc=None):
+    state = state or {}
+    if state.get("status") != "refreshing":
+        return False
+    now_utc = now_utc or utc_now()
+    started = _as_datetime(state.get("last_started_at"))
+    if started is None:
+        return False
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    return now_utc - started.astimezone(timezone.utc) > REFRESH_ABANDONED_AFTER
+
+
+def _safe_refresh_error(value):
+    if not value:
+        return None
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return {"message": value[:240]}
+    if not isinstance(value, dict):
+        return {"message": str(value)[:240]}
+    out = {}
+    if value.get("type"):
+        out["type"] = str(value.get("type"))[:120]
+    if value.get("message"):
+        out["message"] = str(value.get("message"))[:240]
+    return out or None
+
+
+def refresh_diagnostics(state, now_utc=None):
+    now_utc = now_utc or utc_now()
+    state = state or {}
+    stale = is_stale(now_utc, state)
+    return {
+        "refresh_status": state.get("status"),
+        "refresh_stale": stale,
+        "refresh_last_success_at": _iso(state.get("last_success_at")),
+        "refresh_last_success_slot_local": _lisbon_iso(state.get("last_success_slot_local")),
+        "refresh_last_started_at": _iso(state.get("last_started_at")),
+        "refresh_last_error": _safe_refresh_error(state.get("last_error")),
+    }
 
 
 def empty_cache_payload(spot_id, level):
@@ -244,9 +301,11 @@ def read_cached_payload(spot_id, level):
         return None
     payload = dict(row["payload"])
     sanitize_cached_payload(payload)
-    payload["cache_status"] = state.get("status")
+    diagnostics = refresh_diagnostics(state, utc_now())
+    payload.update(diagnostics)
+    payload["cache_status"] = diagnostics.get("refresh_status")
     payload["cache_updated_at"] = _iso(row.get("updated_at"))
-    payload["cache_stale"] = is_stale(utc_now(), state)
+    payload["cache_stale"] = diagnostics.get("refresh_stale")
     return payload
 
 
@@ -378,67 +437,84 @@ def _insert_snapshot(cur, spot_id, level, run_id, payload):
 
 def _replace_source_rows(cur, spot_id, run_id, sources, payload):
     cur.execute("delete from source_hourly_latest where spot_id = %s", (spot_id,))
+    rows_by_key = {}
     for row in _source_hourly_rows(spot_id, run_id, sources, payload):
-        cur.execute(
-            """
-            insert into source_hourly_latest (
-              spot_id, source, timestamp_utc, wave_height, wave_period,
-              wave_direction, swell_height, swell_period, swell_direction,
-              swell2_height, swell2_period, swell2_direction, wind_wave_height,
-              wind_speed_kmh, wind_direction_deg, wind_gusts_kmh,
-              tide_height_m, air_temp_c, raw, run_id
-            )
-            values (
-              %(spot_id)s, %(source)s, %(timestamp_utc)s, %(wave_height)s,
-              %(wave_period)s, %(wave_direction)s, %(swell_height)s,
-              %(swell_period)s, %(swell_direction)s, %(swell2_height)s,
-              %(swell2_period)s, %(swell2_direction)s, %(wind_wave_height)s,
-              %(wind_speed_kmh)s, %(wind_direction_deg)s, %(wind_gusts_kmh)s,
-              %(tide_height_m)s, %(air_temp_c)s, %(raw)s, %(run_id)s
-            )
-            on conflict (spot_id, source, timestamp_utc) do update set
-              wave_height = excluded.wave_height,
-              wave_period = excluded.wave_period,
-              wave_direction = excluded.wave_direction,
-              swell_height = excluded.swell_height,
-              swell_period = excluded.swell_period,
-              swell_direction = excluded.swell_direction,
-              swell2_height = excluded.swell2_height,
-              swell2_period = excluded.swell2_period,
-              swell2_direction = excluded.swell2_direction,
-              wind_wave_height = excluded.wind_wave_height,
-              wind_speed_kmh = excluded.wind_speed_kmh,
-              wind_direction_deg = excluded.wind_direction_deg,
-              wind_gusts_kmh = excluded.wind_gusts_kmh,
-              tide_height_m = excluded.tide_height_m,
-              air_temp_c = excluded.air_temp_c,
-              raw = excluded.raw,
-              run_id = excluded.run_id
-            """,
-            {**row, "raw": db.jsonb(row["raw"])},
-        )
+        rows_by_key[(row["spot_id"], row["source"], row["timestamp_utc"])] = {
+            **row,
+            "raw": db.jsonb(row["raw"]),
+        }
+    rows = list(rows_by_key.values())
+    if not rows:
+        return
+    columns = (
+        "spot_id",
+        "source",
+        "timestamp_utc",
+        "wave_height",
+        "wave_period",
+        "wave_direction",
+        "swell_height",
+        "swell_period",
+        "swell_direction",
+        "swell2_height",
+        "swell2_period",
+        "swell2_direction",
+        "wind_wave_height",
+        "wind_speed_kmh",
+        "wind_direction_deg",
+        "wind_gusts_kmh",
+        "tide_height_m",
+        "air_temp_c",
+        "raw",
+        "run_id",
+    )
+    with cur.copy(
+        """
+        copy source_hourly_latest (
+          spot_id, source, timestamp_utc, wave_height, wave_period,
+          wave_direction, swell_height, swell_period, swell_direction,
+          swell2_height, swell2_period, swell2_direction, wind_wave_height,
+          wind_speed_kmh, wind_direction_deg, wind_gusts_kmh,
+          tide_height_m, air_temp_c, raw, run_id
+        ) from stdin
+        """,
+    ) as copy:
+        for row in rows:
+            copy.write_row(tuple(row.get(column) for column in columns))
 
 
 def _replace_source_snapshots(cur, spot_id, run_id, sources, payload):
     cur.execute("delete from source_snapshot_latest where spot_id = %s", (spot_id,))
+    rows_by_key = {}
     for row in _source_snapshot_rows(spot_id, run_id, sources, payload):
-        cur.execute(
-            """
-            insert into source_snapshot_latest (
-              spot_id, source, current_payload, analysis_payload, error,
-              fetched_at, model_init_utc, run_id, updated_at
-            )
-            values (
-              %(spot_id)s, %(source)s, %(current_payload)s, %(analysis_payload)s,
-              %(error)s, %(fetched_at)s, %(model_init_utc)s, %(run_id)s, now()
-            )
-            """,
-            {
-                **row,
-                "current_payload": db.jsonb(row["current_payload"]),
-                "analysis_payload": db.jsonb(row["analysis_payload"]),
-            },
-        )
+        rows_by_key[(row["spot_id"], row["source"])] = {
+            **row,
+            "current_payload": db.jsonb(row["current_payload"]),
+            "analysis_payload": db.jsonb(row["analysis_payload"]),
+        }
+    rows = list(rows_by_key.values())
+    if not rows:
+        return
+    columns = (
+        "spot_id",
+        "source",
+        "current_payload",
+        "analysis_payload",
+        "error",
+        "fetched_at",
+        "model_init_utc",
+        "run_id",
+    )
+    with cur.copy(
+        """
+        copy source_snapshot_latest (
+          spot_id, source, current_payload, analysis_payload, error,
+          fetched_at, model_init_utc, run_id, updated_at
+        ) from stdin
+        """,
+    ) as copy:
+        for row in rows:
+            copy.write_row(tuple(row.get(column) for column in columns) + (utc_now(),))
 
 
 def _replace_window_rows(cur, spot_id, level, run_id, payload):
@@ -446,21 +522,38 @@ def _replace_window_rows(cur, spot_id, level, run_id, payload):
         "delete from window_latest where spot_id = %s and level = %s",
         (spot_id, level),
     )
+    rows_by_key = {}
     for row in _window_rows(spot_id, level, run_id, payload):
-        cur.execute(
-            """
-            insert into window_latest (
-              spot_id, level, window_type, rank, starts_at, ends_at,
-              label, score, tier, payload, run_id, updated_at
-            )
-            values (
-              %(spot_id)s, %(level)s, %(window_type)s, %(rank)s,
-              %(starts_at)s, %(ends_at)s, %(label)s, %(score)s,
-              %(tier)s, %(payload)s, %(run_id)s, now()
-            )
-            """,
-            {**row, "payload": db.jsonb(row["payload"])},
-        )
+        rows_by_key[(row["spot_id"], row["level"], row["window_type"], row["rank"])] = {
+            **row,
+            "payload": db.jsonb(row["payload"]),
+        }
+    rows = list(rows_by_key.values())
+    if not rows:
+        return
+    columns = (
+        "spot_id",
+        "level",
+        "window_type",
+        "rank",
+        "starts_at",
+        "ends_at",
+        "label",
+        "score",
+        "tier",
+        "payload",
+        "run_id",
+    )
+    with cur.copy(
+        """
+        copy window_latest (
+          spot_id, level, window_type, rank, starts_at, ends_at,
+          label, score, tier, payload, run_id, updated_at
+        ) from stdin
+        """,
+    ) as copy:
+        for row in rows:
+            copy.write_row(tuple(row.get(column) for column in columns) + (utc_now(),))
 
 
 def _fetch_and_build_spot(spot):
@@ -496,6 +589,30 @@ def refresh_cache(force=False, now_utc=None, spots=None):
 
         try:
             state = get_refresh_state(conn)
+            if refresh_is_abandoned(state, now_utc):
+                timeout_error = {
+                    "type": "RefreshTimeout",
+                    "message": "Previous refresh did not finish before the serverless timeout.",
+                }
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        update forecast_refresh_state
+                        set status = 'failed',
+                            active_run_id = null,
+                            last_error = %s,
+                            updated_at = now()
+                        where cache_key = %s
+                        """,
+                        (db.jsonb(timeout_error), CACHE_KEY),
+                    )
+                conn.commit()
+                state = {
+                    **(state or {}),
+                    "status": "failed",
+                    "active_run_id": None,
+                    "last_error": timeout_error,
+                }
             if not force and not is_stale(now_utc, state):
                 return {
                     "status": "fresh",

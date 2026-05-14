@@ -2253,11 +2253,6 @@ async function scrape(spot) {
   return data;
 }
 
-async function triggerRefresh() {
-  fetch(apiUrl('/api/refresh?force=1'), { method: 'POST', keepalive: true })
-    .catch(() => {});
-}
-
 // =============================================================================
 // UI
 // =============================================================================
@@ -3218,6 +3213,27 @@ function renderSourceHealthCard(item) {
   </div>`;
 }
 
+function refreshErrorText(error) {
+  if (!error) return '';
+  if (typeof error === 'string') return error;
+  if (typeof error !== 'object') return String(error);
+  return [error.type, error.message].filter(Boolean).join(': ');
+}
+
+function renderRefreshMeta(data) {
+  if (!data) return '';
+  const status = data.refresh_status || data.cache_status || 'unknown';
+  const lastSuccess = data.refresh_last_success_at || data.cache_updated_at || data.fetched_at;
+  const slot = data.refresh_last_success_slot_local;
+  const started = data.refresh_last_started_at;
+  const error = refreshErrorText(data.refresh_last_error);
+  return `<div class="ops-empty">Last refresh <code>${escapeHtml(status)}</code>` +
+    `${lastSuccess ? ` at <code>${escapeHtml(compactIso(lastSuccess))}</code>` : ''}` +
+    `${slot ? ` · slot <code>${escapeHtml(compactIso(slot))}</code>` : ''}` +
+    `${started ? ` · started <code>${escapeHtml(compactIso(started))}</code>` : ''}` +
+    `${error ? `<br>Last refresh error: <code>${escapeHtml(error)}</code>` : ''}</div>`;
+}
+
 function staleHealthHints(report) {
   if (!report || report.error || !report.data) return [];
   const hints = [];
@@ -3226,6 +3242,9 @@ function staleHealthHints(report) {
   }
   if (report.items.some(item => item.currentStale)) {
     hints.push('Source current timestamps are stale; rows and horizons may be from an old cache snapshot even when required fields are present.');
+  }
+  if (report.data.refresh_status === 'failed' && report.data.refresh_last_error) {
+    hints.push(`Last refresh failed: ${refreshErrorText(report.data.refresh_last_error)}`);
   }
   const missingHourlyModels = report.items.filter(item =>
     item.active
@@ -3279,6 +3298,7 @@ function renderOpsReport(results, checkedAt) {
           <div class="ops-spot-name">${escapeHtml(report.spot.name)}</div>
           <div class="ops-spot-meta">${escapeHtml(cacheStatus)}<br>${escapeHtml(compactIso(fetchedAt))}</div>
         </div>
+        ${renderRefreshMeta(report.data)}
         <div class="ops-source-grid">${report.items.map(renderSourceHealthCard).join('')}</div>
       </section>`;
     }).join('')}

@@ -1,4 +1,5 @@
 import os
+import time
 import unittest
 
 import forecast_sync
@@ -141,7 +142,7 @@ class SourceFetchBudgetTests(unittest.TestCase):
         old_value = os.environ.get("SOURCE_FETCH_BUDGET_SECONDS")
         os.environ.pop("SOURCE_FETCH_BUDGET_SECONDS", None)
         try:
-            self.assertLess(forecast_sync._source_fetch_budget_seconds(), 60.0)
+            self.assertLessEqual(forecast_sync._source_fetch_budget_seconds(), 30.0)
         finally:
             if old_value is not None:
                 os.environ["SOURCE_FETCH_BUDGET_SECONDS"] = old_value
@@ -156,6 +157,83 @@ class SourceFetchBudgetTests(unittest.TestCase):
                 os.environ.pop("SOURCE_FETCH_BUDGET_SECONDS", None)
             else:
                 os.environ["SOURCE_FETCH_BUDGET_SECONDS"] = old_value
+
+    def test_default_ibi_timeout_is_shorter_than_global_budget(self):
+        old_budget = os.environ.get("SOURCE_FETCH_BUDGET_SECONDS")
+        old_ibi = os.environ.get("SOURCE_FETCH_TIMEOUT_IBI_SECONDS")
+        os.environ.pop("SOURCE_FETCH_BUDGET_SECONDS", None)
+        os.environ.pop("SOURCE_FETCH_TIMEOUT_IBI_SECONDS", None)
+        try:
+            self.assertLess(
+                forecast_sync._source_timeout_seconds("ibi"),
+                forecast_sync._source_fetch_budget_seconds(),
+            )
+        finally:
+            if old_budget is not None:
+                os.environ["SOURCE_FETCH_BUDGET_SECONDS"] = old_budget
+            if old_ibi is not None:
+                os.environ["SOURCE_FETCH_TIMEOUT_IBI_SECONDS"] = old_ibi
+
+    def test_slow_ibi_does_not_consume_global_source_budget(self):
+        old_budget = os.environ.get("SOURCE_FETCH_BUDGET_SECONDS")
+        old_ibi = os.environ.get("SOURCE_FETCH_TIMEOUT_IBI_SECONDS")
+        os.environ["SOURCE_FETCH_BUDGET_SECONDS"] = "1"
+        os.environ["SOURCE_FETCH_TIMEOUT_IBI_SECONDS"] = "0.05"
+        originals = {
+            "scrape": forecast_sync.scraper.scrape,
+            "surfline": forecast_sync.surfline.fetch,
+            "windguru": forecast_sync.windguru.fetch,
+            "open_meteo": forecast_sync.open_meteo.fetch,
+            "noaa_gfs": forecast_sync.noaa_gfs.fetch,
+            "credentials": forecast_sync.copernicus_ibi.credentials_configured,
+            "ibi": forecast_sync.copernicus_ibi.fetch,
+        }
+        try:
+            forecast_sync.scraper.scrape = lambda *_args, **_kwargs: _sf_payload()
+            forecast_sync.surfline.fetch = lambda *_args, **_kwargs: {"current": {}, "hourly": []}
+            forecast_sync.windguru.fetch = lambda *_args, **_kwargs: {"current": {}, "hourly": []}
+            forecast_sync.open_meteo.fetch = lambda *_args, **_kwargs: {"current": {}, "hourly": []}
+            forecast_sync.noaa_gfs.fetch = lambda *_args, **_kwargs: {"current": {}, "hourly": []}
+            forecast_sync.copernicus_ibi.credentials_configured = lambda: True
+
+            def slow_ibi(*_args, **_kwargs):
+                time.sleep(0.5)
+                return {"current": {}, "hourly": []}
+
+            forecast_sync.copernicus_ibi.fetch = slow_ibi
+
+            started = time.perf_counter()
+            spot = {
+                "id": "carcavelos",
+                "name": "Carcavelos",
+                "url": "https://example.test/sf",
+                "lat": 38.68,
+                "lon": -9.34,
+                "offshore_bearing": 10,
+                "surfline_spot_id": "abc",
+                "windguru_spot_id": "123",
+            }
+            sources = forecast_sync.fetch_sources_for_spot(spot)
+            elapsed = time.perf_counter() - started
+
+            self.assertLess(elapsed, 0.35)
+            self.assertEqual(sources["ibi"]["error"], "ibi fetch timed out after 0.05s")
+        finally:
+            forecast_sync.scraper.scrape = originals["scrape"]
+            forecast_sync.surfline.fetch = originals["surfline"]
+            forecast_sync.windguru.fetch = originals["windguru"]
+            forecast_sync.open_meteo.fetch = originals["open_meteo"]
+            forecast_sync.noaa_gfs.fetch = originals["noaa_gfs"]
+            forecast_sync.copernicus_ibi.credentials_configured = originals["credentials"]
+            forecast_sync.copernicus_ibi.fetch = originals["ibi"]
+            if old_budget is None:
+                os.environ.pop("SOURCE_FETCH_BUDGET_SECONDS", None)
+            else:
+                os.environ["SOURCE_FETCH_BUDGET_SECONDS"] = old_budget
+            if old_ibi is None:
+                os.environ.pop("SOURCE_FETCH_TIMEOUT_IBI_SECONDS", None)
+            else:
+                os.environ["SOURCE_FETCH_TIMEOUT_IBI_SECONDS"] = old_ibi
 
 
 class CopernicusDiagnosticsTests(unittest.TestCase):
